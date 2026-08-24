@@ -798,6 +798,7 @@ export class Game {
   }
 
   private hitPlayer(kx: number, ky: number): boolean {
+    if (this.god) return false
     const A = this.arena!
     if (this.clock < A.invulnT) return false
     A.shields--
@@ -1166,6 +1167,118 @@ export class Game {
   }
 
   trailUserMul = 1
+  dev = false
+  god = false
+  noclip = false
+  timeScale = 1
+  devFps = 60
+
+  private speedSteps = [0.25, 0.5, 1, 2]
+  private speedIdx = 2
+
+  devSlower(): void {
+    this.speedIdx = Math.max(0, this.speedIdx - 1)
+    this.timeScale = this.speedSteps[this.speedIdx]
+  }
+
+  devFaster(): void {
+    this.speedIdx = Math.min(this.speedSteps.length - 1, this.speedIdx + 1)
+    this.timeScale = this.speedSteps[this.speedIdx]
+  }
+
+  devCycleModifier(): void {
+    const order: (Modifier | null)[] = [null, 'rush', 'silence']
+    const idx = order.indexOf(this.modifier)
+    this.modifier = order[(idx + 1) % order.length]
+    this.announceModifier()
+  }
+
+  devAddZone(): void {
+    const kinds: ('courant' | 'noir')[] = ['courant', 'noir']
+    const existing = this.zones.length
+    if (existing >= 2) {
+      this.zones = []
+      return
+    }
+    const kind = kinds[existing % 2]
+    const m = this.maze
+    const cx = Math.max(0, Math.min(m.cols - 5, Math.floor((this.ball.x - m.ox) / m.cell) - 2))
+    const cy = Math.max(0, Math.min(m.rows - 5, Math.floor((this.ball.y - m.oy) / m.cell) - 2))
+    let dx = 0
+    let dy = 0
+    if (kind === 'courant') {
+      const a = Math.floor(Math.random() * 4)
+      dx = [1, 0, -1, 0][a] * 480
+      dy = [0, 1, 0, -1][a] * 480
+    }
+    this.zones.push({
+      kind,
+      x: m.ox + cx * m.cell + m.cell * 0.15,
+      y: m.oy + cy * m.cell + m.cell * 0.15,
+      w: 4 * m.cell - m.cell * 0.3,
+      h: 4 * m.cell - m.cell * 0.3,
+      dx,
+      dy,
+      cx: m.ox + (cx + 2) * m.cell,
+      cy: m.oy + (cy + 2) * m.cell,
+    })
+  }
+
+  devRefill(): void {
+    this.grenades = this.mode.grenadesPerLevel
+    this.sonarCharges = SONAR_MAX
+    this.sonarFill = 0
+  }
+
+  devRevealAll(): void {
+    for (let id = 0; id < this.maze.walls.length; id++) {
+      this.softReveal(id, 0.9, 'probe')
+    }
+  }
+
+  devTeleportPortal(): void {
+    if (this.portalCell === null) {
+      const p = this.maze.path[Math.floor(this.maze.path.length * 0.55)]
+      this.portalCell = [p[0], p[1]]
+      this.portalConsumed = false
+    }
+    this.ball.x = this.maze.ox + (this.portalCell[0] + 0.5) * this.maze.cell
+    this.ball.y = this.maze.oy + (this.portalCell[1] + 0.5) * this.maze.cell
+    this.ball.vx = 0
+    this.ball.vy = 0
+    this.trailEpoch++
+    this.trailX = this.ball.x
+    this.trailY = this.ball.y
+  }
+
+  devArena(): void {
+    if (this.phase !== 'playing') {
+      if (this.phase !== 'preview') return
+      this.drainT = -1
+      this.phase = 'playing'
+    }
+    this.devTeleportPortal()
+    this.enterArena()
+  }
+
+  devGoto(n: number): void {
+    if (this.phase !== 'playing' && this.phase !== 'preview' && this.phase !== 'paused') return
+    if (this.arena) this.exitArena()
+    this.level = Math.max(0, Math.min(RUN_LENGTH - 1, n))
+    this.maze = this.makeLevel(this.level)
+    this.reveals.clear()
+    this.trailEpoch++
+    this.resetBall()
+    this.levelTime = 0
+    this.resetLevelStats()
+    this.titleCls = ''
+    this.startPreview()
+    this.audio.begin()
+  }
+
+  skipResume(): void {
+    this.resumeCountdown = 0
+  }
 
   resetLevel(): void {
     if (this.phase !== 'playing' && this.phase !== 'preview' && this.phase !== 'paused') return
@@ -1372,7 +1485,7 @@ export class Game {
     for (let i = 0; i < steps; i++) {
       b.x += b.vx * sdt
       b.y += b.vy * sdt
-      this.collide()
+      if (!this.noclip) this.collide()
     }
     const eff = sp > maxSp ? maxSp : sp
     this.speedNorm = eff / maxSp
@@ -1460,25 +1573,27 @@ export class Game {
           ) {
             this.impactAt.set(id, this.clock)
             this.lastImpactAny = this.clock
-            this.levelImpacts++
-            const known = this.knownWalls.has(id)
-            if (known) this.levelImpactsKnown++
-            if (!this.probedForgiven.has(id) && this.levelProbed.has(id)) {
-              this.probedForgiven.add(id)
-              this.popup(b.x, b.y - b.r - 8, 'MUR PALPÉ · PARDONNÉ', '#c4b5fd', 1.05)
-            } else {
-              const cost = known ? IMPACT_KNOWN_COST : IMPACT_UNKNOWN_COST
-              this.levelImpactPen += cost
-              this.levelPoints = Math.max(0, this.levelPoints - cost)
-              this.chain = 0
-              this.mult = 1
-              this.popup(
-                b.x,
-                b.y - b.r - 8,
-                `-${cost}${known ? ' CONNU' : ''}`,
-                '#fda4af',
-                known ? 1.2 : 1,
-              )
+            if (!this.god) {
+              this.levelImpacts++
+              const known = this.knownWalls.has(id)
+              if (known) this.levelImpactsKnown++
+              if (!this.probedForgiven.has(id) && this.levelProbed.has(id)) {
+                this.probedForgiven.add(id)
+                this.popup(b.x, b.y - b.r - 8, 'MUR PALPÉ · PARDONNÉ', '#c4b5fd', 1.05)
+              } else {
+                const cost = known ? IMPACT_KNOWN_COST : IMPACT_UNKNOWN_COST
+                this.levelImpactPen += cost
+                this.levelPoints = Math.max(0, this.levelPoints - cost)
+                this.chain = 0
+                this.mult = 1
+                this.popup(
+                  b.x,
+                  b.y - b.r - 8,
+                  `-${cost}${known ? ' CONNU' : ''}`,
+                  '#fda4af',
+                  known ? 1.2 : 1,
+                )
+              }
             }
             this.softReveal(id, 1, 'hit')
             const rv = this.reveals.get(id)

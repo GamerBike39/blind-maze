@@ -17,6 +17,7 @@ const overlayTitle = document.getElementById('overlay-title')!
 const overlaySub = document.getElementById('overlay-sub')!
 const ovKicker = document.getElementById('ov-kicker')!
 const ovHint = document.getElementById('ov-hint')!
+const devInfo = document.getElementById('dev-info')!
 const modeList = document.getElementById('mode-list')!
 const statsGrid = document.getElementById('stats-grid')!
 
@@ -506,13 +507,63 @@ window.addEventListener('keydown', (e) => {
   else void el?.requestFullscreen().catch(() => {})
 })
 
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Backquote' || e.code === 'F4') {
+    e.preventDefault()
+    game.dev = !game.dev
+    return
+  }
+  if (!game.dev) return
+  switch (e.code) {
+    case 'KeyN':
+      game.devGoto(e.shiftKey ? game.level - 1 : game.level + 1)
+      break
+    case 'KeyT':
+      game.devTeleportPortal()
+      break
+    case 'KeyY':
+      game.devArena()
+      break
+    case 'KeyH':
+      game.devRefill()
+      break
+    case 'KeyK':
+      game.devRevealAll()
+      break
+    case 'KeyJ':
+      game.god = !game.god
+      break
+    case 'KeyV':
+      game.noclip = !game.noclip
+      break
+    case 'KeyU':
+      game.devSlower()
+      break
+    case 'KeyI':
+      game.devFaster()
+      break
+    case 'KeyM':
+      game.devCycleModifier()
+      break
+    case 'KeyC':
+      game.devAddZone()
+      break
+    case 'KeyO':
+      game.skipResume()
+      break
+  }
+})
+
 let last = performance.now()
 let shownScore = 0
 let prevMult = 1
+let fpsEma = 60
 
 function frame(now: number): void {
-  const dt = Math.min(0.033, Math.max(0, (now - last) / 1000))
+  const rawDt = Math.min(0.033, Math.max(0, (now - last) / 1000))
   last = now
+  fpsEma += (1 / Math.max(1e-3, rawDt) - fpsEma) * 0.05
+  const dt = rawDt * game.timeScale
 
   input.poll()
   game.update(dt)
@@ -520,7 +571,7 @@ function frame(now: number): void {
   const scale = stageRect.width / BOARD
   const bx = stageRect.left + game.ball.x * scale
   const by = stageRect.top + game.ball.y * scale
-  bg.frame(bx, by, game.motion, dt, game.clock)
+  bg.frame(bx, by, game.motion, rawDt, game.clock)
   input.setPointerView(stageRect.left, stageRect.top, scale)
   input.setBallPos(game.ball.x, game.ball.y, game.ball.r)
   const sv = input.uiSticks()
@@ -568,6 +619,17 @@ function frame(now: number): void {
     hudMult.classList.remove('on')
   }
   prevMult = game.mult
+
+  if (game.dev) {
+    devInfo.classList.remove('hidden')
+    devInfo.textContent =
+      `DEV ×${game.timeScale}${game.god ? ' · GOD' : ''}${game.noclip ? ' · NOCLIP' : ''}\n` +
+      `${Math.round(fpsEma)} fps · L${game.level + 1} ${game.gridSize}×${game.gridSize} · ${game.phase}${game.inArena ? ' · ARENA' : ''}\n` +
+      `pos ${Math.round(game.ball.x)},${Math.round(game.ball.y)} · zones ${game.zones.length} · portail ${game.portalKind}${game.portalConsumed ? ' ✔' : ''}\n` +
+      `[N]niveau [T]portail [Y]arène [H]recharge [K]révèle\n[J]god [V]noclip [U/I]temps [M]modif [C]zone [O]skip`
+  } else {
+    devInfo.classList.add('hidden')
+  }
 
   syncOverlay()
 
