@@ -165,6 +165,14 @@ const FLASH_PAID_BASE = 100
 const FLASH_PAID_STEP = 100
 const FLASH_RADIUS_CELLS = 3.2
 
+export const SONAR_DUR = 0.9
+export const SONAR_RANGE_CELLS = 7
+const SONAR_GRAZE_NEED = 5
+const SONAR_MAX = 3
+const DRIFT_ACC = 545
+
+export type Modifier = 'courant' | 'rush' | 'silence'
+
 export function fmtTime(t: number): string {
   const mm = Math.floor(t / 60)
   const ss = Math.floor(t % 60)
@@ -210,6 +218,14 @@ export class Game {
   modeIndex = 1
   grenades = 0
   flashAt = -10
+  modifier: Modifier | null = null
+  driftX = 0
+  driftY = 0
+  sonarCharges = 1
+  sonarFill = 0
+  private grazeAt = new Map<number, number>()
+  private sonarT0 = -1
+  private sonarPrevR = 0
   previewT = 0
   previewDur = 2
 
@@ -282,9 +298,10 @@ export class Game {
         this.softReveal(id, 0.5, 'probe')
       }
     }
-    this.previewPts = mz.path.map((c) => this.cellCenter(c))
     this.previewDur = Math.min(3, Math.max(1.8, mz.path.length * 0.045))
     this.drainDur = Math.min(3, Math.max(1.2, this.previewDur * 0.75))
+    this.rollModifier(n)
+    this.previewPts = mz.path.map((c) => this.cellCenter(c))
     this.visited.clear()
     const [sx, sy] = mz.start
     this.lastCellKey = sy * size + sx
@@ -305,6 +322,39 @@ export class Game {
 
   private braidFor(n: number): number {
     return this.mode.daily ? 0.2 : Math.min(0.22, n * 0.06)
+  }
+
+  private rollModifier(n: number): void {
+    this.modifier = null
+    this.driftX = 0
+    this.driftY = 0
+    if (n < 1) return
+    const rnd = this.mode.daily
+      ? rngFromSeed(hashSeed(`${this.todayKey()}|mod|${n}`))
+      : Math.random
+    if (rnd() >= 0.65) return
+    const pick = ['courant', 'rush', 'silence'][Math.floor(rnd() * 3)] as Modifier
+    this.modifier = pick
+    if (pick === 'courant') {
+      const a = rnd() * Math.PI * 2
+      const mag = DRIFT_ACC * (0.8 + rnd() * 0.4)
+      this.driftX = Math.cos(a) * mag
+      this.driftY = Math.sin(a) * mag
+    }
+  }
+
+  modifierLabel(): string {
+    return this.modifier === null ? '' : this.modifier.toUpperCase()
+  }
+
+  private stallNow(): number {
+    return COMBO_STALL * (this.modifier === 'rush' ? 0.7 : 1)
+  }
+
+  sonarProgress(): number | null {
+    if (this.sonarT0 < 0) return null
+    const q = (this.clock - this.sonarT0) / SONAR_DUR
+    return q >= 1 ? null : q
   }
 
   private resetBall(): void {
@@ -383,6 +433,7 @@ export class Game {
       if (this.input.startEdge()) {
         this.drainT = 0
         this.phase = 'playing'
+        this.announceModifier()
       }
     } else if (this.phase === 'transition') {
       this.transitionT -= dt
@@ -405,6 +456,17 @@ export class Game {
       }
       this.physics(dt)
       if (this.input.flashEdge()) this.useFlash()
+      if (this.input.sonarEdge()) this.fireSonar()
+      if (this.sonarT0 >= 0) {
+        const t = this.clock - this.sonarT0
+        if (t > SONAR_DUR) this.sonarT0 = -1
+        else {
+          const rangePx = this.maze.cell * SONAR_RANGE_CELLS
+          const r1 = (t / SONAR_DUR) * rangePx
+          this.revealBand(this.sonarPrevR, r1, rangePx)
+          this.sonarPrevR = r1
+        }
+      }
       const [ex, ey] = this.cellCenter(this.maze.exit)
       this.exitGlow = Math.max(
         0,
@@ -466,9 +528,61 @@ export class Game {
 
   private startPreview(): void {
     this.grenades = this.mode.grenadesPerLevel
+    this.sonarCharges = 1
+    this.sonarFill = 0
+    if (this.modifier === 'silence') {
+      this.drainT = -1
+      this.phase = 'playing'
+      this.announceModifier()
+      return
+    }
     this.previewT = 0
-    this.drainT = -1
     this.phase = 'preview'
+  }
+
+  private announceModifier(): void {
+    const l = this.modifierLabel()
+    if (!l) return
+    let arrow = ''
+    if (this.modifier === 'courant') {
+      arrow =
+        Math.abs(this.driftX) > Math.abs(this.driftY)
+          ? this.driftX > 0
+            ? ' →'
+            : ' ←'
+          : this.driftY > 0
+            ? ' ↓'
+            : ' ↑'
+    }
+    this.popup(this.ball.x, this.ball.y - this.ball.r - 34, `${l}${arrow}`, '#fcd34d', 1.35)
+  }
+
+  fireSonar(): void {
+    if (this.phase !== 'playing') return
+    if (this.sonarCharges <= 0) {
+      this.popup(this.ball.x, this.ball.y - this.ball.r - 8, 'SONAR DÉCHARGÉ', '#94a3b8')
+      return
+    }
+    this.sonarCharges--
+    this.sonarT0 = this.clock
+    this.sonarPrevR = 0
+    this.audio.ping()
+    this.input.rumble(0.2, 0.5, 90)
+  }
+
+  useFlashPublic(): void {
+    this.useFlash()
+  }
+
+  private revealBand(r0: number, r1: number, rangePx: number): void {
+    const m = this.maze
+    for (let id = 0; id < m.walls.length; id++) {
+      const w = m.walls[id]
+      const d = Math.hypot(w.x + w.w / 2 - this.ball.x, w.y + w.h / 2 - this.ball.y)
+      if (d > r0 && d <= r1) {
+        this.softReveal(id, Math.max(0.25, 1 - d / rangePx) * 0.9, 'probe')
+      }
+    }
   }
 
   get previewWaiting(): boolean {
@@ -476,6 +590,7 @@ export class Game {
   }
 
   private useFlash(): void {
+    if (this.phase !== 'playing') return
     const b = this.ball
     if (this.grenades > 0) {
       this.grenades--
@@ -569,6 +684,7 @@ export class Game {
     this.drainT = -1
     this.previewT = 0
     this.phase = 'playing'
+    this.announceModifier()
   }
 
   controlKind(): 'pad' | 'touch' | 'mouse' {
@@ -643,6 +759,7 @@ export class Game {
     this.knownWalls.clear()
     this.impactAt.clear()
     this.lastImpactAny = -1
+    this.grazeAt.clear()
     this.chain = 0
     this.mult = 1
     this.comboT = 0
@@ -720,9 +837,9 @@ export class Game {
       b.vy *= fd
     } else {
       const st = this.input.leftStick()
-      b.vx += st.x * 3400 * dt
-      b.vy += st.y * 3400 * dt
-      const damp = Math.exp(-2.8 * dt)
+      b.vx += st.x * 3650 * dt + this.driftX * dt
+      b.vy += st.y * 3650 * dt + this.driftY * dt
+      const damp = Math.exp(-3.05 * dt)
       b.vx *= damp
       b.vy *= damp
     }
@@ -753,7 +870,7 @@ export class Game {
       if (!this.visited.has(key)) {
         this.visited.add(key)
         this.chain++
-        this.comboT = COMBO_STALL
+        this.comboT = this.stallNow()
         const newMult = Math.min(MULT_MAX, 1 + Math.floor(this.chain / COMBO_STEP))
         const tierUp = newMult > this.mult
         this.mult = newMult
@@ -863,10 +980,30 @@ export class Game {
           }
           this.softReveal(id, 1, 'hit')
         } else {
-          this.softReveal(id, 0.55, 'hit')
+          this.grazeContact(id)
         }
       } else {
-        this.softReveal(id, 0.55, 'hit')
+        this.grazeContact(id)
+      }
+    }
+  }
+
+  private grazeContact(id: number): void {
+    this.softReveal(id, 0.55, 'hit')
+    if (this.clock - (this.grazeAt.get(id) ?? -1) > 0.35) {
+      this.grazeAt.set(id, this.clock)
+      const b = this.ball
+      if (Math.hypot(b.vx, b.vy) > this.maze.cell * 1.2) {
+        this.sonarFill++
+        if (this.sonarFill >= SONAR_GRAZE_NEED) {
+          this.sonarFill = 0
+          if (this.sonarCharges < SONAR_MAX) {
+            this.sonarCharges++
+            this.popup(b.x, b.y - b.r - 32, '📡 +1', '#67e8f9')
+          } else {
+            this.popup(b.x, b.y - b.r - 32, 'SONAR PLEIN', '#67e8f9', 0.9)
+          }
+        }
       }
     }
   }
@@ -935,7 +1072,8 @@ export class Game {
     const done = this.level + 1
     const m = this.maze
     const base = m.cols * m.rows * BASE_PER_CELL
-    const parT = m.path.length * PAR_SECONDS_PER_CELL + PAR_SLACK
+    const parT =
+      m.path.length * PAR_SECONDS_PER_CELL * (this.modifier === 'rush' ? 0.78 : 1) + PAR_SLACK
     const ratio = Math.max(-1, Math.min(1, (2 * parT - this.levelTime) / parT))
     const timePts = Math.round(ratio * base * TIME_RATIO_WEIGHT)
     const cartoPts = this.levelProbed.size * CARTO_PTS
@@ -992,7 +1130,9 @@ export class Game {
         : `${this.levelImpacts} impact(s)` +
           (this.levelImpactsKnown > 0 ? ` dont ${this.levelImpactsKnown} sur mur connu` : '')
     this.messageSub =
-      `${fmtTime(this.levelTime)} · ${impactsTxt} · ${this.levelFlashes} éclair(s) · ${this.levelProbed.size} murs palpés\n` +
+      `${fmtTime(this.levelTime)} · ${impactsTxt} · ${this.levelFlashes} éclair(s) · ${
+        this.levelProbed.size
+      } murs palpés${this.modifier ? ` · ${this.modifierLabel()}` : ''}\n` +
       `Parcours +${this.levelPoints.toLocaleString('fr-FR')} · Temps ${
         timePts >= 0 ? '+' : ''
       }${timePts} · Carto +${cartoPts} · Impacts -${this.levelImpactPen}\n` +

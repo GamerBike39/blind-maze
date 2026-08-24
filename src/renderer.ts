@@ -78,6 +78,7 @@ export class Renderer {
     this.particles(g)
     ctx.globalCompositeOperation = 'source-over'
     this.revealed(g)
+    this.sonarRing(g)
     this.startMark(g)
     this.exitMark(g)
     this.hand(g)
@@ -248,6 +249,27 @@ export class Renderer {
         ctx.fill()
       }
     }
+    ctx.restore()
+  }
+
+  private sonarRing(g: Game): void {
+    const q = g.sonarProgress()
+    if (q === null) return
+    const ctx = this.ctx
+    const m = g.maze
+    const r = q * m.cell * 7
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = `rgba(165,243,252,${((1 - q) * 0.75).toFixed(3)})`
+    ctx.lineWidth = 3 * (1 - q) + 1
+    ctx.beginPath()
+    ctx.arc(g.ball.x, g.ball.y, r, 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.strokeStyle = `rgba(255,255,255,${((1 - q) * 0.35).toFixed(3)})`
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.arc(g.ball.x, g.ball.y, r * 0.88, 0, Math.PI * 2)
+    ctx.stroke()
     ctx.restore()
   }
 

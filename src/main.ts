@@ -10,6 +10,7 @@ const hudLevel = document.getElementById('hud-level')!
 const hudTime = document.getElementById('hud-time')!
 const hudMult = document.getElementById('hud-mult')!
 const hudFlash = document.getElementById('hud-flash')!
+const hudSonar = document.getElementById('hud-sonar')!
 const hudBest = document.getElementById('hud-best')!
 const overlay = document.getElementById('overlay')!
 const overlayTitle = document.getElementById('overlay-title')!
@@ -38,6 +39,11 @@ const modeRows = MODES.map((m) => {
 
 const btnPause = document.getElementById('btn-pause')!
 btnPause.addEventListener('click', () => game.togglePause())
+
+const actSonar = document.getElementById('act-sonar')!
+const actFlash = document.getElementById('act-flash')!
+actSonar.addEventListener('click', () => game.fireSonar())
+actFlash.addEventListener('click', () => game.useFlashPublic())
 
 const btnReset = document.getElementById('btn-reset')!
 btnReset.addEventListener('click', () => game.resetLevel())
@@ -70,6 +76,7 @@ let modalKind: 'settings' | 'controls' | null = null
 const KEYBOARD_LINES: [string, string][] = [
   ['ZQSD / WASD', 'Rouler'],
   ['Flèches', 'Palper'],
+  ['Espace', 'Sonar'],
   ['G', 'Éclair'],
   ['R', 'Recommencer le niveau'],
   ['Échap / P', 'Pause'],
@@ -320,6 +327,7 @@ function startWord(): string {
 function syncOverlay(): void {
   const p = game.phase
   const mi = p === 'ready' ? game.modeIndex : -1
+  const kind = game.controlKind()
   if (p === ovPhase && mi === ovMode) return
   ovPhase = p
   ovMode = mi
@@ -336,6 +344,10 @@ function syncOverlay(): void {
   btnReset.classList.toggle(
     'on',
     p === 'playing' || p === 'preview' || p === 'paused',
+  )
+  document.getElementById('actions')!.classList.toggle(
+    'on',
+    kind === 'touch' && (p === 'playing' || p === 'preview' || p === 'paused'),
   )
   if (p === 'playing' || p === 'preview') return
   statsGrid.classList.add('hidden')
@@ -369,7 +381,9 @@ function syncOverlay(): void {
     ovHint.textContent = `${startWord()} pour reprendre`
   } else if (p === 'transition' && game.lastSummary !== null) {
     const s = game.lastSummary
-    ovKicker.textContent = `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.mode.name} ×${game.mode.mult}`
+    ovKicker.textContent =
+      `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.mode.name} ×${game.mode.mult}` +
+      (game.modifierLabel() ? ` · ⟬${game.modifierLabel()}⟭` : '')
     overlayTitle.textContent =
       s.rankName === '—' ? `NIVEAU ${game.level + 1} TERMINÉ` : s.rankName
     overlayTitle.className = s.rankCls
@@ -529,9 +543,13 @@ function frame(now: number): void {
       hudFlash.textContent = `⚡${cost}`
       hudFlash.className = game.totalScore >= cost ? 'paid' : 'broke'
     }
+    hudSonar.textContent = `📡${game.sonarCharges}${game.sonarFill > 0 ? `·${game.sonarFill}` : ''}`
+    hudSonar.className = game.sonarCharges > 0 ? '' : 'broke'
   } else {
     hudFlash.textContent = ''
     hudFlash.className = ''
+    hudSonar.textContent = ''
+    hudSonar.className = ''
   }
   if (game.mult > 1) {
     hudMult.textContent = `×${game.mult}`

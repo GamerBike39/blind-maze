@@ -98,6 +98,18 @@ body {
   text-shadow: 0 0 12px rgba(196, 181, 253, 0.6);
 }
 
+#hud-sonar {
+  color: #67e8f9;
+  font-weight: 700;
+  font-size: clamp(14px, 2.2vmin, 20px);
+  text-shadow: 0 0 12px rgba(103, 232, 249, 0.55);
+}
+
+#hud-sonar.broke {
+  color: #f87171;
+  text-shadow: none;
+}
+
 #hud-flash.paid {
   color: #fcd34d;
   text-shadow: 0 0 12px rgba(252, 211, 77, 0.6);
@@ -634,4 +646,43 @@ body {
 .stick-knob.probe {
   background: rgba(240, 171, 252, 0.24);
   border-color: rgba(240, 171, 252, 0.55);
+}
+
+#actions {
+  position: fixed;
+  right: 16px;
+  bottom: 20px;
+  z-index: 4;
+  display: none;
+  flex-direction: column;
+  gap: 12px;
+}
+
+#actions.on {
+  display: flex;
+}
+
+#actions button {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: rgba(15, 23, 42, 0.55);
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  font-size: 22px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+#act-sonar {
+  border-color: rgba(103, 232, 249, 0.55);
+  background: rgba(8, 47, 73, 0.5);
+}
+
+#act-flash {
+  border-color: rgba(240, 171, 252, 0.55);
+  background: rgba(80, 20, 90, 0.4);
+}
+
+#actions button:active {
+  transform: scale(0.92);
 }

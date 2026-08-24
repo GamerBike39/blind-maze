@@ -63,6 +63,7 @@ export class Input {
   private startFlag = false
   private pauseFlag = false
   private flashFlag = false
+  private sonarFlag = false
   private resetFlag = false
   private menuDirFlag = 0
   private prevMenuLeft = false
@@ -243,6 +244,7 @@ export class Input {
     let edge = false
     let pauseEdge = false
     let flashBtn = false
+    let sonarBtn = false
     if (gp) {
       gp.buttons.forEach((b, i) => {
         const was = this.prevButtons[i] ?? false
@@ -250,6 +252,7 @@ export class Input {
           if (i === 0 || i === 9) edge = true
           if (i === 9) pauseEdge = true
           if (i === 5) flashBtn = true
+          if (i === 4) sonarBtn = true
         }
         this.prevButtons[i] = b.pressed
       })
@@ -266,6 +269,9 @@ export class Input {
     const keyR = this.keys.has('KeyR')
     const resetEdge = keyR && !this.prevKeyR
     this.prevKeyR = keyR
+    const spaceNow = this.keys.has('Space')
+    const spaceEdge = spaceNow && !this.prevKeys.has('Space')
+    const sonarEdge = sonarBtn || spaceEdge
     const menuLeft = (gp?.buttons[14]?.pressed ?? false) || this.keys.has('ArrowLeft')
     const menuRight = (gp?.buttons[15]?.pressed ?? false) || this.keys.has('ArrowRight')
     let menuDir = 0
@@ -277,17 +283,25 @@ export class Input {
     this.startFlag = edge || keyEdge || this.tapFlag
     this.pauseFlag = pauseEdge || pauseKeyEdge
     this.flashFlag = flashBtn || keyGEdge || this.dblFlag
+    this.sonarFlag = sonarEdge
     this.resetFlag = resetEdge
     this.menuDirFlag = menuDir
     if (this.uiModalOpen) {
       this.startFlag = false
       this.pauseFlag = false
       this.flashFlag = false
+      this.sonarFlag = false
       this.resetFlag = false
       this.menuDirFlag = 0
     }
     this.tapFlag = false
     this.dblFlag = false
+  }
+
+  sonarEdge(): boolean {
+    const s = this.sonarFlag
+    this.sonarFlag = false
+    return s
   }
 
   menuDir(): number {
