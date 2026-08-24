@@ -28,7 +28,8 @@ const modeRows = MODES.map((m) => {
   mult.textContent = `×${m.mult}`
   row.appendChild(name)
   row.appendChild(mult)
-  row.addEventListener('click', () => {
+  row.addEventListener('click', (e) => {
+    e.stopPropagation()
     game.modeIndex = MODES.indexOf(m)
   })
   modeList.appendChild(row)
@@ -37,6 +38,10 @@ const modeRows = MODES.map((m) => {
 
 const btnPause = document.getElementById('btn-pause')!
 btnPause.addEventListener('click', () => game.togglePause())
+
+overlay.addEventListener('click', () => {
+  if (!overlay.classList.contains('hidden')) input.pressStart()
+})
 
 const sticksLayer = document.getElementById('sticks')!
 const stickEls: Record<string, { base: HTMLDivElement; knob: HTMLDivElement } | null> = {
@@ -151,6 +156,10 @@ function animateStats(grid: HTMLElement): void {
 let ovPhase: Phase | null = null
 let ovMode = -1
 
+function startWord(): string {
+  return { pad: 'Ⓐ', touch: 'Tape', mouse: 'Clic' }[game.controlKind()]
+}
+
 function syncOverlay(): void {
   const p = game.phase
   const mi = p === 'ready' ? game.modeIndex : -1
@@ -187,16 +196,16 @@ function syncOverlay(): void {
           : `×${MODES[i].mult}`
     })
     ovHint.textContent = input.connected
-      ? '◀ ▶ mode · Ⓐ ou Entrée pour lancer'
+      ? '◀ ▶ mode · Ⓐ pour lancer'
       : matchMedia('(pointer: coarse)').matches
-        ? '◀ ▶ modes (touche les lignes) · tape l\u2019écran pour lancer\nMoitié gauche : rouler · moitié droite : palper'
-        : 'Clic sur la balle maintenu : guider · double-clic : éclair · clic droit : palper'
+        ? '◀ ▶ modes · tape l\u2019écran pour lancer\nMoitié gauche : rouler · moitié droite : palper'
+        : 'Clic sur un mode · clic sur le panneau pour lancer\nEn jeu : clic sur la balle maintenu pour la guider'
   } else if (p === 'paused') {
     ovKicker.textContent = ''
     overlayTitle.textContent = game.messageTitle
     overlayTitle.className = 'title-default'
     overlaySub.textContent = game.messageSub
-    ovHint.textContent = 'Ⓐ / Start — reprendre'
+    ovHint.textContent = `${startWord()} pour reprendre`
   } else if (p === 'transition' && game.lastSummary !== null) {
     const s = game.lastSummary
     ovKicker.textContent = `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.mode.name} ×${game.mode.mult}`
@@ -246,7 +255,7 @@ function syncOverlay(): void {
     ])
     statsGrid.classList.remove('hidden')
     animateStats(statsGrid)
-    ovHint.textContent = 'Ⓐ continuer'
+    ovHint.textContent = `${startWord()} pour continuer`
   } else if (p === 'recap') {
     ovKicker.textContent = `RUN ${game.mode.name} ×${game.mode.mult}`
     overlayTitle.textContent = game.messageTitle.replace('RUN TERMINÉ !', 'RUN TERMINÉ !')
@@ -285,7 +294,7 @@ function syncOverlay(): void {
     ])
     statsGrid.classList.remove('hidden')
     animateStats(statsGrid)
-    ovHint.textContent = 'Ⓐ nouveau run'
+    ovHint.textContent = `${startWord()} pour un nouveau run`
   }
 }
 

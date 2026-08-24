@@ -148,7 +148,7 @@ export class Renderer {
     const ctx = this.ctx
     const b = g.ball
     const p = 0.55 + 0.45 * Math.sin(g.clock * 4.5)
-    const text = 'Ⓐ POUR PARTIR'
+    const text = g.controlKind() === 'pad' ? 'Ⓐ POUR PARTIR' : g.promptStartText()
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'

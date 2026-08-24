@@ -224,6 +224,7 @@ export class Game {
   private levelProbed = new Set<number>()
   private knownWalls = new Set<number>()
   private impactAt = new Map<number, number>()
+  private lastImpactAny = -1
   private chain = 0
   private comboT = 0
   private visited = new Set<number>()
@@ -553,11 +554,24 @@ export class Game {
     else this.requestPause()
   }
 
+  controlKind(): 'pad' | 'touch' | 'mouse' {
+    return this.input.kind
+  }
+
+  promptStartText(): string {
+    return this.input.promptStart()
+  }
+
   private enterPause(): void {
     this.resumePhase = this.phase
+    const k = this.controlKind()
     this.messageTitle = 'PAUSE'
     this.messageSub =
-      'Le chrono est figé — la grille aussi\nStart / Échap / P ou Ⓐ pour reprendre'
+      k === 'pad'
+        ? 'Chrono et grille figés\nⒶ / Start pour reprendre'
+        : k === 'touch'
+          ? 'Chrono et grille figés\nTouche l\u2019écran pour reprendre'
+          : 'Chrono et grille figés\nClic ou Entrée pour reprendre'
     this.titleCls = ''
     this.phase = 'paused'
     this.muteLayers()
@@ -610,6 +624,7 @@ export class Game {
     this.levelProbed.clear()
     this.knownWalls.clear()
     this.impactAt.clear()
+    this.lastImpactAny = -1
     this.chain = 0
     this.mult = 1
     this.comboT = 0
@@ -787,8 +802,12 @@ export class Game {
         const impact = -vn
         if (impact > m.cell * 0.65) {
           const s = Math.min(1, impact / (m.cell * 3))
-          if (this.clock - (this.impactAt.get(id) ?? -1) > 0.3) {
+          if (
+            this.clock - (this.impactAt.get(id) ?? -1) > 0.5 &&
+            this.clock - this.lastImpactAny > 0.15
+          ) {
             this.impactAt.set(id, this.clock)
+            this.lastImpactAny = this.clock
             this.levelImpacts++
             const known = this.knownWalls.has(id)
             if (known) this.levelImpactsKnown++

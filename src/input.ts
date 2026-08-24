@@ -89,11 +89,13 @@ export class Input {
   private tapY = 0
   private tapIgnore = false
   private tapFlag = false
+  private lastKeyT = -1e9
 
   constructor() {
     window.addEventListener('keydown', (e) => {
       if (PREVENT.has(e.code)) e.preventDefault()
       this.keys.add(e.code)
+      this.lastKeyT = performance.now()
     })
     window.addEventListener('keyup', (e) => this.keys.delete(e.code))
     window.addEventListener('blur', () => {
@@ -304,6 +306,25 @@ export class Input {
 
   get connected(): boolean {
     return this.pad() !== null
+  }
+
+  get kind(): 'pad' | 'touch' | 'mouse' {
+    if (this.pad()) return 'pad'
+    try {
+      if (matchMedia('(pointer: coarse)').matches) return 'touch'
+    } catch {}
+    return 'mouse'
+  }
+
+  promptStart(): string {
+    const now = performance.now()
+    if (this.pad()) return 'Ⓐ POUR PARTIR'
+    if (now - this.lastKeyT < 4000) return 'ENTRÉE POUR PARTIR'
+    return this.kind === 'touch' ? 'TAPE POUR PARTIR' : 'CLIC POUR PARTIR'
+  }
+
+  pressStart(): void {
+    this.startFlag = true
   }
 
   get vibrating(): boolean {
