@@ -1,4 +1,12 @@
-import { generateMaze, wallsAtPoint, wallsNear, type Maze } from './maze'
+import {
+  generateMaze,
+  hashSeed,
+  rngFromSeed,
+  wallsAtPoint,
+  wallsNear,
+  type Maze,
+  type Rng,
+} from './maze'
 import type { Input } from './input'
 import type { SoundEngine } from './audio'
 
@@ -91,6 +99,7 @@ export interface Mode {
   impactCostMul: number
   grenadesPerLevel: number
   preReveal: number
+  daily?: boolean
 }
 
 export const MODES: Mode[] = [
@@ -138,6 +147,18 @@ export const MODES: Mode[] = [
     grenadesPerLevel: 1,
     preReveal: 0,
   },
+  {
+    id: 'jour',
+    name: 'DÉFI DU JOUR',
+    desc: 'Les 5 grilles du jour, identiques pour tous · boucles garanties · ⚡3/niveau',
+    mult: 1.5,
+    revealLifeMul: 1,
+    trailFadeMul: 1,
+    impactCostMul: 1,
+    grenadesPerLevel: 3,
+    preReveal: 0,
+    daily: true,
+  },
 ]
 
 const FLASH_PAID_BASE = 100
@@ -173,6 +194,11 @@ export class Game {
   messageTitle = 'LABYRINTHE AVEUGLE'
   messageSub =
     'Stick gauche : rouler · Stick droit : palper les murs\nRB / G : éclair · Start : pause · F : plein écran'
+
+  todayLabel(): string {
+    const [y, m, d] = this.todayKey().split('-')
+    return `${d}/${m}/${y}`
+  }
   titleCls = ''
   runResults: LevelResult[] = []
   totalScore = 0
@@ -232,7 +258,16 @@ export class Game {
     const span = cell * size
     const off = (BOARD - span) / 2
     this.ball.r = Math.max(6, cell * 0.23)
-    const mz = generateMaze(size, size, off, off, cell, Math.max(5, Math.round(cell * 0.09)))
+    const mz = generateMaze(
+      size,
+      size,
+      off,
+      off,
+      cell,
+      Math.max(5, Math.round(cell * 0.09)),
+      this.rngFor(n),
+      this.braidFor(n),
+    )
     this.maze = mz
     if (this.mode.preReveal > 0) {
       const count = Math.floor(mz.walls.length * this.mode.preReveal)
@@ -249,6 +284,21 @@ export class Game {
     this.lastCellKey = sy * size + sx
     this.visited.add(this.lastCellKey)
     return mz
+  }
+
+  private todayKey(): string {
+    const d = new Date()
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(
+      d.getDate(),
+    ).padStart(2, '0')}`
+  }
+
+  private rngFor(n: number): Rng {
+    return this.mode.daily ? rngFromSeed(hashSeed(`${this.todayKey()}#${n}`)) : Math.random
+  }
+
+  private braidFor(n: number): number {
+    return this.mode.daily ? 0.2 : Math.min(0.22, n * 0.06)
   }
 
   private resetBall(): void {

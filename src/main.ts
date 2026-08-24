@@ -128,7 +128,9 @@ function syncOverlay(): void {
     ovKicker.textContent = ''
     overlayTitle.textContent = game.messageTitle
     overlayTitle.className = 'title-default'
-    overlaySub.textContent = game.messageSub
+    const sel = MODES[game.modeIndex]
+    const desc = sel.daily ? `${game.todayLabel()} — ${sel.desc}` : sel.desc
+    overlaySub.textContent = `▸ ${desc}\n\n${game.messageSub}`
     modeList.classList.remove('hidden')
     modeRows.forEach((row, i) => {
       row.classList.toggle('sel', i === game.modeIndex)

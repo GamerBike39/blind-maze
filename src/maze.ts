@@ -70,6 +70,30 @@ function solve(
   return path
 }
 
+export type Rng = () => number
+
+export function rngFromSeed(seed: number): Rng {
+  let a = seed >>> 0
+  return () => {
+    a |= 0
+    a = (a + 0x6d2b79f5) | 0
+    let t = Math.imul(a ^ (a >>> 15), 1 | a)
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296
+  }
+}
+
+export function hashSeed(str: string): number {
+  let h = 1779033703 ^ str.length
+  for (let i = 0; i < str.length; i++) {
+    h = Math.imul(h ^ str.charCodeAt(i), 3432918353)
+    h = (h << 13) | (h >>> 19)
+  }
+  h = Math.imul(h ^ (h >>> 16), 2246822507)
+  h = Math.imul(h ^ (h >>> 13), 3266489909)
+  return (h ^ (h >>> 16)) >>> 0
+}
+
 const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v))
 
 export function generateMaze(
@@ -79,13 +103,15 @@ export function generateMaze(
   oy: number,
   cell: number,
   th: number,
+  rng: Rng = Math.random,
+  braid = 0,
 ): Maze {
   const hWalls: boolean[][] = Array.from({ length: rows + 1 }, () => Array<boolean>(cols).fill(true))
   const vWalls: boolean[][] = Array.from({ length: rows }, () => Array<boolean>(cols + 1).fill(true))
   const seen: boolean[][] = Array.from({ length: rows }, () => Array<boolean>(cols).fill(false))
 
   const stack: [number, number][] = [
-    [Math.floor(Math.random() * cols), Math.floor(Math.random() * rows)],
+    [Math.floor(rng() * cols), Math.floor(rng() * rows)],
   ]
   seen[stack[0][1]][stack[0][0]] = true
 
@@ -100,13 +126,32 @@ export function generateMaze(
       stack.pop()
       continue
     }
-    const [nx, ny, dir] = neighbours[Math.floor(Math.random() * neighbours.length)]
+    const [nx, ny, dir] = neighbours[Math.floor(rng() * neighbours.length)]
     if (dir === 0) hWalls[cy][cx] = false
     else if (dir === 1) vWalls[cy][cx + 1] = false
     else if (dir === 2) hWalls[cy + 1][cx] = false
     else vWalls[cy][cx] = false
     seen[ny][nx] = true
     stack.push([nx, ny])
+  }
+
+  if (braid > 0) {
+    for (let cy = 0; cy < rows; cy++) {
+      for (let cx = 0; cx < cols; cx++) {
+        const deg =
+          (hWalls[cy][cx] ? 0 : 1) +
+          (vWalls[cy][cx + 1] ? 0 : 1) +
+          (hWalls[cy + 1][cx] ? 0 : 1) +
+          (vWalls[cy][cx] ? 0 : 1)
+        if (deg !== 1 || rng() >= braid) continue
+        const cand: (() => void)[] = []
+        if (cy > 0 && hWalls[cy][cx]) cand.push(() => (hWalls[cy][cx] = false))
+        if (cx < cols - 1 && vWalls[cy][cx + 1]) cand.push(() => (vWalls[cy][cx + 1] = false))
+        if (cy < rows - 1 && hWalls[cy + 1][cx]) cand.push(() => (hWalls[cy + 1][cx] = false))
+        if (cx > 0 && vWalls[cy][cx]) cand.push(() => (vWalls[cy][cx] = false))
+        if (cand.length > 0) cand[Math.floor(rng() * cand.length)]()
+      }
+    }
   }
 
   const half = th / 2
@@ -141,7 +186,7 @@ export function generateMaze(
     [cols - 1, rows - 1],
     [0, rows - 1],
   ]
-  const s = Math.floor(Math.random() * 4)
+  const s = Math.floor(rng() * 4)
   const start = corners[s]
   const exit = corners[(s + 2) % 4]
 
