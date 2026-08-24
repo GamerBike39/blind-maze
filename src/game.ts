@@ -347,6 +347,20 @@ export class Game {
     return this.modifier === null ? '' : this.modifier.toUpperCase()
   }
 
+  modifierTag(): string {
+    if (this.modifier === null) return ''
+    if (this.modifier !== 'courant') return this.modifierLabel()
+    const arrow =
+      Math.abs(this.driftX) > Math.abs(this.driftY)
+        ? this.driftX > 0
+          ? '→'
+          : '←'
+        : this.driftY > 0
+          ? '↓'
+          : '↑'
+    return `COURANT ${arrow}`
+  }
+
   private stallNow(): number {
     return COMBO_STALL * (this.modifier === 'rush' ? 0.7 : 1)
   }
@@ -835,6 +849,8 @@ export class Game {
       const fd = Math.exp(-0.6 * dt)
       b.vx *= fd
       b.vy *= fd
+      b.vx += this.driftX * dt
+      b.vy += this.driftY * dt
     } else {
       const st = this.input.leftStick()
       b.vx += st.x * 3650 * dt + this.driftX * dt
@@ -980,21 +996,42 @@ export class Game {
           }
           this.softReveal(id, 1, 'hit')
         } else {
-          this.grazeContact(id)
+          this.grazeContact(id, px, py, nx, ny)
         }
       } else {
-        this.grazeContact(id)
+        this.grazeContact(id, px, py, nx, ny)
       }
     }
   }
 
-  private grazeContact(id: number): void {
+  private grazeContact(
+    id: number,
+    px: number,
+    py: number,
+    nx: number,
+    ny: number,
+  ): void {
     this.softReveal(id, 0.55, 'hit')
     if (this.clock - (this.grazeAt.get(id) ?? -1) > 0.35) {
       this.grazeAt.set(id, this.clock)
       const b = this.ball
-      if (Math.hypot(b.vx, b.vy) > this.maze.cell * 1.2) {
+      if (Math.hypot(b.vx, b.vy) > this.maze.cell * 0.9) {
         this.sonarFill++
+        this.audio.tick()
+        for (let i = 0; i < 3; i++) {
+          const a = Math.atan2(ny, nx) + (Math.random() * 2 - 1) * 0.9
+          const spd = this.maze.cell * (0.5 + Math.random() * 0.6)
+          this.particles.push({
+            x: px,
+            y: py,
+            vx: Math.cos(a) * spd,
+            vy: Math.sin(a) * spd,
+            t: 0,
+            life: 0.25 + Math.random() * 0.15,
+            color: '#a5f3fc',
+            size: this.maze.th * 0.32,
+          })
+        }
         if (this.sonarFill >= SONAR_GRAZE_NEED) {
           this.sonarFill = 0
           if (this.sonarCharges < SONAR_MAX) {

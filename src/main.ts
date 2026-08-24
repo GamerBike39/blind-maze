@@ -528,7 +528,10 @@ function frame(now: number): void {
   showStick('probe', sv.probe)
 
   hudTime.textContent = fmtTime(game.totalTime)
-  hudLevel.textContent = `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}`
+  const mt = game.modifierTag()
+  hudLevel.textContent =
+    `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}` +
+    (mt ? ` · ⟬${mt}⟭` : '')
   shownScore += (game.totalScore + game.levelPoints - shownScore) * Math.min(1, dt * 7)
   if (Math.abs(game.totalScore + game.levelPoints - shownScore) < 1) {
     shownScore = game.totalScore + game.levelPoints

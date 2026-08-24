@@ -237,8 +237,24 @@ export class SoundEngine {
     ng.gain.setTargetAtTime(n * n * 0.03, c.currentTime, 0.12)
   }
 
-  ping(): void {
+  tick(): void {
     const c = this.ctx
+    const master = this.master
+    if (!c || !master || c.state !== 'running') return
+    const t = c.currentTime
+    const o = c.createOscillator()
+    o.type = 'sine'
+    o.frequency.value = 1150
+    const g = c.createGain()
+    g.gain.setValueAtTime(0.05, t)
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.045)
+    o.connect(g)
+    g.connect(master)
+    o.start(t)
+    o.stop(t + 0.05)
+  }
+
+  ping(): void {    const c = this.ctx
     const master = this.master
     if (!c || !master || c.state !== 'running') return
     const t = c.currentTime
