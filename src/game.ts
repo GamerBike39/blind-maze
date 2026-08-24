@@ -185,8 +185,32 @@ export interface Zone {
   cy: number
 }
 
+export interface Hazard {
+  kind: 'orb' | 'bar'
+  x: number
+  y: number
+  vx: number
+  vy: number
+  r: number
+  w: number
+  h: number
+}
+
 export interface Arena {
+  kind: 'chargeur' | 'tisseur'
   hp: number
+  shields: number
+  invulnT: number
+  t: number
+  nextAttackAt: number
+  patternIdx: number
+  pending: { at: number; type: 'aim' }[]
+  haz: Hazard[]
+  windup: number
+  lungeUntil: number
+  ldx: number
+  ldy: number
+  nextDashAt: number
   bx: number
   by: number
   bvx: number
@@ -231,6 +255,8 @@ export class Game {
   zones: Zone[] = []
   portalCell: [number, number] | null = null
   portalConsumed = false
+  portalKind: 'chargeur' | 'tisseur' = 'chargeur'
+  portalCooldownUntil = -1
   arena: Arena | null = null
 
   todayLabel(): string {
@@ -439,6 +465,7 @@ export class Game {
       )
       if (inZone) continue
       this.portalCell = [cx, cy]
+      this.portalKind = rnd() < 0.5 ? 'chargeur' : 'tisseur'
       return
     }
   }
@@ -698,6 +725,7 @@ export class Game {
 
   private portalCheck(): void {
     if (this.portalCell === null || this.portalConsumed) return
+    if (this.clock < this.portalCooldownUntil) return
     const [cx, cy] = this.portalCell
     const px = this.maze.ox + (cx + 0.5) * this.maze.cell
     const py = this.maze.oy + (cy + 0.5) * this.maze.cell
@@ -712,20 +740,34 @@ export class Game {
     const Ah = cell * 4.2
     const Ax = (BOARD - Aw) / 2
     const Ay = (BOARD - Ah) / 2
+    const kind = this.portalKind
+    this.savedPos = { x: this.ball.x, y: this.ball.y }
     this.arena = {
-      hp: 3,
+      kind,
+      hp: kind === 'chargeur' ? 3 : 99,
+      shields: kind === 'tisseur' ? 2 : 99,
+      invulnT: -1,
+      t: 0,
+      nextAttackAt: this.clock + 1,
+      patternIdx: 0,
+      pending: [],
+      haz: [],
+      windup: -1,
+      lungeUntil: -1,
+      ldx: 0,
+      ldy: -1,
+      nextDashAt: this.clock + 2.6,
       bx: BOARD / 2,
       by: Ay + cell * 0.9,
       bvx: cell * 2.3,
       bvy: cell * 1.6,
-      br: cell * 0.42,
+      br: cell * (kind === 'chargeur' ? 0.42 : 0.36),
       flash: -1,
       Ax,
       Ay,
       Aw,
       Ah,
     }
-    this.savedPos = { x: this.ball.x, y: this.ball.y }
     this.ball.x = BOARD / 2
     this.ball.y = Ay + Ah - this.ball.r - 10
     this.ball.vx = 0
@@ -733,120 +775,251 @@ export class Game {
     this.trailEpoch++
     this.trailX = this.ball.x
     this.trailY = this.ball.y
-    this.popup(BOARD / 2, Ay - 26, 'LE GARDIEN S\u2019ÉVEILLE', '#fb923c', 1.3)
+    const label =
+      kind === 'chargeur'
+        ? 'LE CHARGEUR S\u2019ÉVEILLE'
+        : 'LE TISSEUR — SURVIS 12s'
+    this.popup(BOARD / 2, Ay - 26, label, '#fb923c', 1.3)
     this.audio.ping()
     this.input.rumble(0.6, 0.2, 160)
     this.shake = Math.min(1, this.shake + 0.35)
   }
 
+  private hitPlayer(kx: number, ky: number): boolean {
+    const A = this.arena!
+    if (this.clock < A.invulnT) return false
+    A.shields--
+    A.invulnT = this.clock + 1.1
+    const b = this.ball
+    const d = Math.hypot(kx, ky) || 1
+    b.vx = (kx / d) * this.maze.cell * 3.2
+    b.vy = (ky / d) * this.maze.cell * 3.2
+    this.audio.impact(0.8)
+    this.input.rumble(0.8, 0.6, 140)
+    this.shake = Math.min(1, this.shake + 0.55)
+    if (A.shields < 0) {
+      this.failArena()
+      return true
+    }
+    this.popup(b.x, b.y - b.r - 10, `BOUCLIER ${A.shields + 1}`, '#fda4af', 1.15)
+    return false
+  }
+
+  private failArena(): void {
+    const A = this.arena!
+    this.popup(BOARD / 2, A.Ay + A.Ah / 2, 'ÉCHEC DU GARDIEN', '#fda4af', 1.4)
+    this.portalCooldownUntil = this.clock + 2.5
+    this.exitArena()
+  }
+
   private arenaStep(dt: number): void {
     const A = this.arena!
     const b = this.ball
-    const dm = this.input.directMove()
-    if (dm) {
-      const k = Math.min(1, dt * 24)
-      b.vx = ((dm.x - b.x) * k) / dt
-      b.vy = ((dm.y - b.y) * k) / dt
-    } else {
-      const st = this.input.leftStick()
-      b.vx += st.x * 3650 * dt
-      b.vy += st.y * 3650 * dt
-      const damp = Math.exp(-3.05 * dt)
-      b.vx *= damp
-      b.vy *= damp
-    }
-    const maxSp = this.maze.cell * 5.5
-    let sp = Math.hypot(b.vx, b.vy)
-    if (sp > maxSp) {
-      b.vx *= maxSp / sp
-      b.vy *= maxSp / sp
-      sp = maxSp
-    }
-    const steps = Math.min(4, Math.max(1, Math.ceil((sp * dt) / (A.br * 0.7))))
-    const sdt = dt / steps
-    for (let i = 0; i < steps; i++) {
-      b.x += b.vx * sdt
-      b.y += b.vy * sdt
-      this.boundsBounce(b, b.r, 0.45)
-    }
-    A.bx += A.bvx * dt
-    A.by += A.bvy * dt
-    const wob = Math.sin(this.clock * 1.7)
-    if (this.clock > this.bossTurnAt) {
-      this.bossTurnAt = this.clock + 0.7 + Math.random() * 0.6
-      const a = Math.atan2(A.bvy, A.bvx) + wob * 0.55
-      const bs = Math.hypot(A.bvx, A.bvy)
-      A.bvx = Math.cos(a) * bs
-      A.bvy = Math.sin(a) * bs
-    }
-    const boss = { x: A.bx, y: A.by, vx: A.bvx, vy: A.bvy }
-    this.boundsBounce(boss, A.br, 1)
-    A.bx = boss.x
-    A.by = boss.y
-    A.bvx = boss.vx
-    A.bvy = boss.vy
+    const cell = this.maze.cell
+    A.t += dt
 
-    const dx = b.x - A.bx
-    const dy = b.y - A.by
-    const d = Math.hypot(dx, dy) || 1
-    const rr = b.r + A.br
-    if (d < rr && this.clock - this.bossHitAt > 0.35) {
-      const nx = dx / d
-      const ny = dy / d
-      const toward = -(b.vx * nx + b.vy * ny)
-      if (sp > this.maze.cell * 0.95 && toward > this.maze.cell * 0.25) {
-        this.bossHitAt = this.clock
-        A.flash = this.clock
-        A.hp--
-        const boost = 1.28
-        const bs = Math.hypot(A.bvx, A.bvy) * boost
-        A.bvx = -nx * bs
-        A.bvy = -ny * bs
-        b.vx = nx * this.maze.cell * 2.9
-        b.vy = ny * this.maze.cell * 2.9
-        if (A.hp > 0) {
-          this.popup(A.bx, A.by - A.br - 10, 'TOUCHÉ !', '#fb923c', 1.3)
+    if (A.kind === 'chargeur') {
+      if (A.windup > 0) {
+        A.bx -= A.ldx * cell * 0.5 * dt
+        A.by -= A.ldy * cell * 0.5 * dt
+        if (this.clock - A.windup > 0.55) {
+          A.lungeUntil = this.clock + 0.36
+          this.audio.ping()
         }
-        this.audio.impact(0.85)
-        this.audio.ping()
-        this.input.rumble(0.9, 0.4, 150)
-        this.shake = Math.min(1, this.shake + 0.5)
-        this.spawnBurst(A.bx, A.by, -nx, -ny, 0.9)
-        if (A.hp <= 0) {
-          this.winArena()
-          return
-        }
+      } else if (this.clock < A.lungeUntil) {
+        A.bx += A.ldx * cell * 7.5 * dt
+        A.by += A.ldy * cell * 7.5 * dt
       } else {
-        b.x = A.bx + nx * rr
-        b.y = A.by + ny * rr
-        const vn = b.vx * nx + b.vy * ny
-        if (vn < 0) {
-          b.vx -= 1.5 * vn * nx
-          b.vy -= 1.5 * vn * ny
+        A.bx += A.bvx * dt
+        A.by += A.bvy * dt
+        const wob = Math.sin(this.clock * 1.7)
+        if (this.clock > this.bossTurnAt) {
+          this.bossTurnAt = this.clock + 0.7 + Math.random() * 0.6
+          const a = Math.atan2(A.bvy, A.bvx) + wob * 0.55
+          const bs = Math.hypot(A.bvx, A.bvy)
+          A.bvx = Math.cos(a) * bs
+          A.bvy = Math.sin(a) * bs
+        }
+        if (this.clock > A.nextDashAt && this.clock - A.flash > 1) {
+          A.nextDashAt = this.clock + 3.4 + Math.random() * 1.2
+          A.windup = this.clock
+          const dx = b.x - A.bx
+          const dy = b.y - A.by
+          const d = Math.hypot(dx, dy) || 1
+          A.ldx = dx / d
+          A.ldy = dy / d
+          this.audio.tick()
+        }
+      }
+      const boss = { x: A.bx, y: A.by, vx: this.clock < A.lungeUntil ? 0 : A.bvx, vy: this.clock < A.lungeUntil ? 0 : A.bvy }
+      const hitWall = this.boundsBounce(boss, A.br, this.clock < A.lungeUntil ? 0 : 1)
+      A.bx = boss.x
+      A.by = boss.y
+      if (!(this.clock < A.lungeUntil)) {
+        A.bvx = boss.vx
+        A.bvy = boss.vy
+      } else if (hitWall) {
+        A.lungeUntil = -1
+        A.windup = -1
+      }
+    }
+
+    if (A.kind === 'tisseur') {
+      A.bx = A.Ax + A.Aw / 2
+      A.by = A.Ay + A.Ah * 0.26 + Math.sin(this.clock * 2.2) * cell * 0.14
+      while (A.pending.length > 0 && A.pending[0].at <= this.clock) {
+        A.pending.shift()
+        const dxp = b.x - A.bx
+        const dyp = b.y - A.by
+        const dp = Math.hypot(dxp, dyp) || 1
+        const sp = cell * 3.3
+        A.haz.push({ kind: 'orb', x: A.bx, y: A.by, vx: (dxp / dp) * sp, vy: (dyp / dp) * sp, r: cell * 0.16, w: 0, h: 0 })
+        this.audio.tick()
+      }
+      if (this.clock >= A.nextAttackAt) {
+        const k = A.patternIdx % 3
+        A.patternIdx++
+        A.nextAttackAt = this.clock + 1.9
+        if (k === 0) {
+          for (let i = 0; i < 3; i++) A.pending.push({ at: this.clock + i * 0.14, type: 'aim' })
+        } else if (k === 1) {
+          for (let i = 0; i < 11; i++) {
+            const a = (i / 11) * Math.PI * 2 + this.clock * 0.4
+            const sp2 = cell * 2.4
+            A.haz.push({ kind: 'orb', x: A.bx, y: A.by, vx: Math.cos(a) * sp2, vy: Math.sin(a) * sp2, r: cell * 0.15, w: 0, h: 0 })
+          }
+        } else {
+          const gapW = cell * 1.7
+          const gx = A.Ax + gapW / 2 + Math.random() * (A.Aw - gapW)
+          const th = cell * 0.32
+          const segL = gx - gapW / 2 - A.Ax
+          const segR = A.Ax + A.Aw - (gx + gapW / 2)
+          const vy = cell * 2.8
+          if (segL > 4) A.haz.push({ kind: 'bar', x: A.Ax, y: A.Ay - th, vx: 0, vy, r: 0, w: segL, h: th })
+          if (segR > 4) A.haz.push({ kind: 'bar', x: gx + gapW / 2, y: A.Ay - th, vx: 0, vy, r: 0, w: segR, h: th })
+        }
+      }
+      for (let i = A.haz.length - 1; i >= 0; i--) {
+        const hz = A.haz[i]
+        hz.x += hz.vx * dt
+        hz.y += hz.vy * dt
+        if (
+          hz.x < A.Ax - 60 ||
+          hz.x > A.Ax + A.Aw + 60 ||
+          hz.y < A.Ay - 80 ||
+          hz.y > A.Ay + A.Ah + 60
+        ) {
+          A.haz.splice(i, 1)
+        }
+      }
+      let dead = false
+      for (const hz of A.haz) {
+        let hit = false
+        let kx = b.x - hz.x
+        let ky = b.y - hz.y
+        if (hz.kind === 'orb') {
+          hit = Math.hypot(kx, ky) < b.r + hz.r
+        } else {
+          const cxr = Math.min(hz.x + hz.w, Math.max(hz.x, b.x))
+          const cyr = Math.min(hz.y + hz.h, Math.max(hz.y, b.y))
+          kx = b.x - cxr
+          ky = b.y - cyr
+          hit = Math.hypot(kx, ky) < b.r
+        }
+        if (hit) {
+          if (hz.kind === 'orb') {
+            hz.x = -9999
+            hz.y = -9999
+          }
+          dead = this.hitPlayer(kx, ky)
+          break
+        }
+      }
+      if (dead || A.shields < 0) return
+      if (A.t >= 12) {
+        this.winArena()
+        return
+      }
+    }
+
+    if (A.kind === 'chargeur') {
+      const dx = b.x - A.bx
+      const dy = b.y - A.by
+      const d = Math.hypot(dx, dy) || 1
+      const rr = b.r + A.br
+      let sp = Math.hypot(b.vx, b.vy)
+      if (d < rr && this.clock - this.bossHitAt > 0.35) {
+        const nx = dx / d
+        const ny = dy / d
+        const toward = -(b.vx * nx + b.vy * ny)
+        const lunging = this.clock < A.lungeUntil || A.windup > 0
+        if (lunging) {
+          this.hitPlayer(nx, ny)
+        } else if (sp > cell * 0.95 && toward > cell * 0.25) {
+          this.bossHitAt = this.clock
+          A.flash = this.clock
+          A.hp--
+          const boost = 1.28
+          const bs = Math.hypot(A.bvx, A.bvy) * boost
+          A.bvx = -nx * bs
+          A.bvy = -ny * bs
+          b.vx = nx * cell * 2.9
+          b.vy = ny * cell * 2.9
+          if (A.hp > 0) {
+            this.popup(A.bx, A.by - A.br - 10, 'TOUCHÉ !', '#fb923c', 1.3)
+          }
+          this.audio.impact(0.85)
+          this.audio.ping()
+          this.input.rumble(0.9, 0.4, 150)
+          this.shake = Math.min(1, this.shake + 0.5)
+          this.spawnBurst(A.bx, A.by, -nx, -ny, 0.9)
+          if (A.hp <= 0) {
+            this.winArena()
+            return
+          }
+        } else {
+          b.x = A.bx + nx * rr
+          b.y = A.by + ny * rr
+          const vn = b.vx * nx + b.vy * ny
+          if (vn < 0) {
+            b.vx -= 1.5 * vn * nx
+            b.vy -= 1.5 * vn * ny
+          }
         }
       }
     }
-    this.speedNorm = Math.min(1, Math.hypot(b.vx, b.vy) / (this.maze.cell * 5.2))
+
+    this.speedNorm = Math.min(1, Math.hypot(b.vx, b.vy) / (cell * 5.2))
   }
 
-  private boundsBounce(o: { x: number; y: number; vx: number; vy: number }, r: number, e: number): void {
+  private boundsBounce(
+    o: { x: number; y: number; vx: number; vy: number },
+    r: number,
+    e: number,
+  ): boolean {
     const A = this.arena!
+    let bounced = false
     if (o.x < A.Ax + r) {
       o.x = A.Ax + r
       o.vx = Math.abs(o.vx) * e
+      bounced = true
     }
     if (o.x > A.Ax + A.Aw - r) {
       o.x = A.Ax + A.Aw - r
       o.vx = -Math.abs(o.vx) * e
+      bounced = true
     }
     if (o.y < A.Ay + r) {
       o.y = A.Ay + r
       o.vy = Math.abs(o.vy) * e
+      bounced = true
     }
     if (o.y > A.Ay + A.Ah - r) {
       o.y = A.Ay + A.Ah - r
       o.vy = -Math.abs(o.vy) * e
+      bounced = true
     }
+    return bounced
   }
 
   private winArena(): void {
