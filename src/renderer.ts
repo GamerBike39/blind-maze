@@ -148,14 +148,20 @@ export class Renderer {
     const ctx = this.ctx
     const b = g.ball
     const p = 0.55 + 0.45 * Math.sin(g.clock * 4.5)
+    const text = 'Ⓐ POUR PARTIR'
     ctx.save()
     ctx.textAlign = 'center'
     ctx.textBaseline = 'bottom'
     ctx.font = `700 ${Math.round(Math.max(16, g.maze.cell * 0.34))}px "Segoe UI", system-ui, sans-serif`
+    const halfW = ctx.measureText(text).width / 2
+    let x = Math.min(BOARD - halfW - 16, Math.max(halfW + 16, b.x))
+    let y = b.y - b.r - 14
+    if (y < 34) y = b.y + b.r + 32
+    y = Math.min(BOARD - 14, Math.max(30, y))
     ctx.shadowColor = '#22d3ee'
     ctx.shadowBlur = 14 * p
     ctx.fillStyle = `rgba(165,243,252,${p.toFixed(3)})`
-    ctx.fillText('Ⓐ POUR PARTIR', b.x, b.y - b.r - 14)
+    ctx.fillText(text, x, y)
     ctx.restore()
   }
 
