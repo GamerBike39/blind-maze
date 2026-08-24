@@ -56,6 +56,7 @@ interface TouchStick {
 export class Input {
   padIndex: number | null = null
   padId = ''
+  uiModalOpen = false
   private keys = new Set<string>()
   private prevKeys = new Set<string>()
   private prevButtons: boolean[] = []
@@ -278,6 +279,13 @@ export class Input {
     this.flashFlag = flashBtn || keyGEdge || this.dblFlag
     this.resetFlag = resetEdge
     this.menuDirFlag = menuDir
+    if (this.uiModalOpen) {
+      this.startFlag = false
+      this.pauseFlag = false
+      this.flashFlag = false
+      this.resetFlag = false
+      this.menuDirFlag = 0
+    }
     this.tapFlag = false
     this.dblFlag = false
   }

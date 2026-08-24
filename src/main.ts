@@ -57,40 +57,143 @@ function loadSettings(): Settings {
     return { ...DEFAULTS }
   }
 }
-
-const setVol = document.getElementById('set-vol') as HTMLInputElement
-const setVib = document.getElementById('set-vib') as HTMLInputElement
-const setTrail = document.getElementById('set-trail') as HTMLSelectElement
-const setWipe = document.getElementById('set-wipe') as HTMLButtonElement
-
-function saveSettings(): void {
+function saveSettings(s: Settings): void {
   try {
-    localStorage.setItem(
-      SETTINGS_KEY,
-      JSON.stringify({ vol: Number(setVol.value), vib: setVib.checked, trail: Number(setTrail.value) }),
-    )
+    localStorage.setItem(SETTINGS_KEY, JSON.stringify(s))
   } catch {}
 }
-setVol.addEventListener('input', () => {
-  audio.setVolume(Number(setVol.value) / 100)
-  saveSettings()
+
+const modalEl = document.getElementById('modal')!
+const modalContent = document.getElementById('modal-content')!
+let modalKind: 'settings' | 'controls' | null = null
+
+const KEYBOARD_LINES: [string, string][] = [
+  ['ZQSD / WASD', 'Rouler'],
+  ['Flèches', 'Palper'],
+  ['G', 'Éclair'],
+  ['R', 'Recommencer le niveau'],
+  ['Échap / P', 'Pause'],
+  ['Entrée / Espace', 'Valider'],
+  ['F', 'Plein écran'],
+]
+
+function settingsHTML(s: Settings): string {
+  return `
+    <h3>Paramètres</h3>
+    <label class="row">
+      <span>Volume</span>
+      <input type="range" id="set-vol" min="0" max="100" value="${s.vol}" />
+    </label>
+    <label class="row">
+      <input type="checkbox" id="set-vib" ${s.vib ? 'checked' : ''} />
+      <span>Vibrations</span>
+    </label>
+    <label class="row">
+      <span>Trainée</span>
+      <select id="set-trail">
+        <option value="0.6" ${s.trail === 0.6 ? 'selected' : ''}>Courte</option>
+        <option value="1" ${s.trail === 1 ? 'selected' : ''}>Normale</option>
+        <option value="1.7" ${s.trail === 1.7 ? 'selected' : ''}>Longue</option>
+      </select>
+    </label>
+    <button id="set-wipe">Effacer records &amp; tops</button>`
+}
+
+function deviceBlockHTML(k: 'pad' | 'touch' | 'mouse'): string {
+  const label = k === 'pad' ? 'Manette' : k === 'touch' ? 'Tactile' : 'Souris'
+  const lines: [string, string][] =
+    k === 'pad'
+      ? [
+          ['Stick gauche', 'Rouler'],
+          ['Stick droit', 'Palper'],
+          ['RB', 'Éclair'],
+          ['Start', 'Pause'],
+        ]
+      : k === 'touch'
+        ? [
+            ['Moitié gauche', 'Rouler (pan 1:1)'],
+            ['Moitié droite', 'Palper'],
+            ['Tap court', 'Valider'],
+            ['Bouton ⏸', 'Pause'],
+          ]
+        : [
+            ['Clic sur la balle + glisser', 'Guider'],
+            ['Double-clic', 'Éclair'],
+            ['Clic droit maintenu', 'Palper'],
+          ]
+  return (
+    `<div class="dev-tag">${label}</div>` +
+    lines.map(([a, b]) => `<div class="ctrl-line"><b>${a}</b><span>${b}</span></div>`).join('')
+  )
+}
+
+function controlsHTML(): string {
+  return `
+    <h3>Commandes</h3>
+    ${deviceBlockHTML(game.controlKind())}
+    <h4>Clavier</h4>
+    <ul class="keys">
+      ${KEYBOARD_LINES.map(([a, b]) => `<li><b>${a}</b><span>${b}</span></li>`).join('')}
+    </ul>`
+}
+
+function openModal(kind: 'settings' | 'controls'): void {
+  modalKind = kind
+  if (kind === 'settings') {
+    modalContent.innerHTML = settingsHTML(loadSettings())
+    const vol = modalContent.querySelector<HTMLInputElement>('#set-vol')!
+    const vib = modalContent.querySelector<HTMLInputElement>('#set-vib')!
+    const trail = modalContent.querySelector<HTMLSelectElement>('#set-trail')!
+    const wipe = modalContent.querySelector<HTMLButtonElement>('#set-wipe')!
+    const apply = (): void => {
+      const s: Settings = {
+        vol: Number(vol.value),
+        vib: vib.checked,
+        trail: Number(trail.value),
+      }
+      audio.setVolume(s.vol / 100)
+      input.vibrationEnabled = s.vib
+      game.trailUserMul = s.trail
+      saveSettings(s)
+    }
+    vol.addEventListener('input', apply)
+    vib.addEventListener('change', apply)
+    trail.addEventListener('change', apply)
+    wipe.addEventListener('click', () => {
+      try {
+        Object.keys(localStorage)
+          .filter((k) => k.startsWith('labyrinthe-'))
+          .forEach((k) => localStorage.removeItem(k))
+      } catch {}
+      wipe.textContent = 'Effacé !'
+      setTimeout(() => (wipe.textContent = 'Effacer records & tops'), 1500)
+    })
+  } else {
+    modalContent.innerHTML = controlsHTML()
+  }
+  modalEl.classList.add('open')
+  input.uiModalOpen = true
+  game.requestPause()
+}
+
+function closeModal(): void {
+  modalKind = null
+  modalEl.classList.remove('open')
+  input.uiModalOpen = false
+}
+
+document.getElementById('btn-settings')!.addEventListener('click', () =>
+  modalKind === 'settings' ? closeModal() : openModal('settings'),
+)
+document.getElementById('btn-controls')!.addEventListener('click', () =>
+  modalKind === 'controls' ? closeModal() : openModal('controls'),
+)
+document.getElementById('modal-close')!.addEventListener('click', closeModal)
+modalEl.addEventListener('click', (e) => {
+  if (e.target === modalEl) closeModal()
 })
-setVib.addEventListener('change', () => {
-  input.vibrationEnabled = setVib.checked
-  saveSettings()
-})
-setTrail.addEventListener('change', () => {
-  game.trailUserMul = Number(setTrail.value)
-  saveSettings()
-})
-setWipe.addEventListener('click', () => {
-  try {
-    Object.keys(localStorage)
-      .filter((k) => k.startsWith('labyrinthe-'))
-      .forEach((k) => localStorage.removeItem(k))
-  } catch {}
-  setWipe.textContent = 'Effacé !'
-  setTimeout(() => (setWipe.textContent = 'Effacer records & tops'), 1500)
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Escape' && modalKind !== null) closeModal()
 })
 
 overlay.addEventListener('click', () => {
@@ -209,56 +312,17 @@ function animateStats(grid: HTMLElement): void {
 
 let ovPhase: Phase | null = null
 let ovMode = -1
-let ovKind: string | null = null
 
 function startWord(): string {
   return { pad: 'Ⓐ', touch: 'Tape', mouse: 'Clic' }[game.controlKind()]
 }
 
-function deviceLines(k: 'pad' | 'touch' | 'mouse'): [string, string][] {
-  if (k === 'pad') {
-    return [
-      ['Stick gauche', 'Rouler'],
-      ['Stick droit', 'Palper'],
-      ['RB', 'Éclair'],
-      ['Start', 'Pause'],
-    ]
-  }
-  if (k === 'touch') {
-    return [
-      ['Moitié gauche', 'Rouler (pan 1:1)'],
-      ['Moitié droite', 'Palper'],
-      ['Tap court', 'Valider'],
-      ['Bouton ⏸', 'Pause'],
-    ]
-  }
-  return [
-    ['Clic sur la balle + glisser', 'Guider'],
-    ['Double-clic', 'Éclair'],
-    ['Clic droit maintenu', 'Palper'],
-  ]
-}
-
-const ctrlDevice = document.getElementById('ctrl-device')!
-
-function syncCtrlDevice(k: 'pad' | 'touch' | 'mouse'): void {
-  const label = k === 'pad' ? 'Manette' : k === 'touch' ? 'Tactile' : 'Souris'
-  ctrlDevice.innerHTML =
-    `<div class="dev-tag">${label}</div>` +
-    deviceLines(k)
-      .map(([a, b]) => `<div class="ctrl-line"><b>${a}</b><span>${b}</span></div>`)
-      .join('')
-}
-
 function syncOverlay(): void {
   const p = game.phase
   const mi = p === 'ready' ? game.modeIndex : -1
-  const kind = game.controlKind()
-  if (p === ovPhase && mi === ovMode && kind === ovKind) return
+  if (p === ovPhase && mi === ovMode) return
   ovPhase = p
   ovMode = mi
-  ovKind = kind
-  syncCtrlDevice(kind)
 
   if (p === 'playing' || p === 'preview') {
     overlay.classList.add('hidden')
@@ -403,9 +467,6 @@ const bg = new Background(document.getElementById('bg') as HTMLCanvasElement)
 
 {
   const s = loadSettings()
-  setVol.value = String(s.vol)
-  setVib.checked = s.vib
-  setTrail.value = String(s.trail)
   audio.setVolume(s.vol / 100)
   input.vibrationEnabled = s.vib
   game.trailUserMul = s.trail

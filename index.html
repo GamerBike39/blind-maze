@@ -7,26 +7,10 @@
   </head>
   <body>
     <canvas id="bg"></canvas>
-    <aside class="side" id="panel-left">
-      <h3>Paramètres</h3>
-      <label class="row">
-        <span>Volume</span>
-        <input type="range" id="set-vol" min="0" max="100" value="85" />
-      </label>
-      <label class="row check">
-        <input type="checkbox" id="set-vib" checked />
-        <span>Vibrations</span>
-      </label>
-      <label class="row">
-        <span>Trainée</span>
-        <select id="set-trail">
-          <option value="0.6">Courte</option>
-          <option value="1" selected>Normale</option>
-          <option value="1.7">Longue</option>
-        </select>
-      </label>
-      <button id="set-wipe">Effacer records &amp; tops</button>
-    </aside>
+    <div id="topbar">
+      <button id="btn-settings" title="Paramètres">⚙</button>
+      <button id="btn-controls" title="Commandes">⌨</button>
+    </div>
     <div id="stage">
       <div id="hud">
         <span id="hud-level">NIVEAU 1/5 · 8×8</span>
@@ -50,23 +34,15 @@
       </div>
       <div id="pad-status"></div>
     </div>
-    <aside class="side" id="panel-right">
-      <h3>Commandes</h3>
-      <div id="ctrl-device"></div>
-      <h4>Clavier</h4>
-      <ul class="keys">
-        <li><b>ZQSD / WASD</b><span>Rouler</span></li>
-        <li><b>Flèches</b><span>Palper</span></li>
-        <li><b>G</b><span>Éclair</span></li>
-        <li><b>R</b><span>Recommencer le niveau</span></li>
-        <li><b>Échap / P</b><span>Pause</span></li>
-        <li><b>Entrée / Espace</b><span>Valider</span></li>
-        <li><b>F</b><span>Plein écran</span></li>
-      </ul>
-    </aside>
     <button id="btn-reset" class="hidden">↺</button>
     <button id="btn-pause" class="hidden">⏸</button>
     <div id="sticks"></div>
+    <div id="modal">
+      <div class="panel modal-panel">
+        <button id="modal-close">✕</button>
+        <div id="modal-content"></div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>
