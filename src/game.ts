@@ -442,26 +442,26 @@ export class Game {
   private rollPortal(n: number): void {
     this.portalCell = null
     this.portalConsumed = false
-    if (n < 1) return
+    if (n < 1 || this.maze.path.length < 6) return
     const rnd = this.mode.daily
       ? rngFromSeed(hashSeed(`${this.todayKey()}|portal|${n}`))
       : Math.random
-    const size = Math.min(8 + n * 2, 22)
-    for (let tries = 0; tries < 80; tries++) {
-      const cx = 1 + Math.floor(rnd() * (size - 2))
-      const cy = 1 + Math.floor(rnd() * (size - 2))
-      if (
-        Math.abs(cx - this.maze.start[0]) <= 1 ||
-        Math.abs(cy - this.maze.start[1]) <= 1 ||
-        Math.abs(cx - this.maze.exit[0]) <= 1 ||
-        Math.abs(cy - this.maze.exit[1]) <= 1
-      ) {
-        continue
-      }
+    const lo = Math.floor(this.maze.path.length * 0.35)
+    const hi = Math.floor(this.maze.path.length * 0.78)
+    const order: number[] = []
+    for (let i = lo; i < hi; i++) order.push(i)
+    while (order.length > 0) {
+      const pick = Math.floor(rnd() * order.length)
+      const idx = order.splice(pick, 1)[0]
+      const [cx, cy] = this.maze.path[idx]
       const px = this.maze.ox + (cx + 0.5) * this.maze.cell
       const py = this.maze.oy + (cy + 0.5) * this.maze.cell
       const inZone = this.zones.some(
-        (z) => px > z.x - this.maze.cell && px < z.x + z.w + this.maze.cell && py > z.y - this.maze.cell && py < z.y + z.h + this.maze.cell,
+        (z) =>
+          px > z.x - this.maze.cell &&
+          px < z.x + z.w + this.maze.cell &&
+          py > z.y - this.maze.cell &&
+          py < z.y + z.h + this.maze.cell,
       )
       if (inZone) continue
       this.portalCell = [cx, cy]
@@ -579,6 +579,18 @@ export class Game {
     } else if (this.phase === 'recap') {
       if (this.input.startEdge()) this.resetRun()
     } else {
+      if (this.resumeCountdown > 0) {
+        const prev = this.resumeCountdown
+        this.resumeCountdown = Math.max(0, this.resumeCountdown - dt)
+        if (this.resumeCountdown > 0 && Math.ceil(prev) !== Math.ceil(this.resumeCountdown)) {
+          this.audio.tick()
+        }
+        if (prev > 0 && this.resumeCountdown === 0) {
+          this.popup(this.ball.x, this.ball.y - this.ball.r - 46, 'GO', '#67e8f9', 1.5)
+          this.audio.ping()
+        }
+        return
+      }
       if (this.drainT >= 0) this.drainT += dt
       this.totalTime += dt
       this.levelTime += dt
@@ -810,6 +822,14 @@ export class Game {
     this.popup(BOARD / 2, A.Ay + A.Ah / 2, 'ÉCHEC DU GARDIEN', '#fda4af', 1.4)
     this.portalCooldownUntil = this.clock + 2.5
     this.exitArena()
+    this.startResume()
+  }
+
+  resumeCountdown = 0
+
+  private startResume(): void {
+    this.resumeCountdown = 3
+    this.audio.tick()
   }
 
   private arenaStep(dt: number): void {
@@ -1027,19 +1047,25 @@ export class Game {
     for (let id = 0; id < this.maze.walls.length; id++) {
       if (Math.random() < 0.3) this.softReveal(id, 0.85, 'probe')
     }
-    this.grenades = Math.min(9, this.grenades + 1)
+    this.grenades = Math.min(9, this.mode.grenadesPerLevel)
     const pts = Math.round(250 * this.mode.mult)
     this.levelPoints += pts
     this.chain += COMBO_STEP * 2
     this.mult = Math.min(MULT_MAX, 1 + Math.floor(this.chain / COMBO_STEP))
     this.popup(BOARD / 2, A.Ay + A.Ah / 2, `GARDIEN VAINCU · +${pts} PTS`, '#fcd34d', 1.5)
-    this.popup(BOARD / 2, A.Ay + A.Ah / 2 + 30, '+⚡ 1', '#67e8f9')
+    this.popup(
+      BOARD / 2,
+      A.Ay + A.Ah / 2 + 30,
+      `⚡ RECHARGÉS (${this.grenades})`,
+      '#67e8f9',
+    )
     this.audio.win(2)
     this.input.rumble(1, 0.8, 260)
     this.shake = 1
     this.spawnBurst(A.bx, A.by, 0, -1, 1)
     this.portalConsumed = true
     this.exitArena()
+    this.startResume()
   }
 
   private exitArena(): void {
@@ -1238,6 +1264,7 @@ export class Game {
     this.flashPaidUsed = 0
     this.levelFlashes = 0
     this.levelFlashSpent = 0
+    this.resumeCountdown = 0
     this.levelMaxSp = 0
     this.levelDist = 0
     this.levelMaxChain = 0

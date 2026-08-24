@@ -93,8 +93,44 @@ export class Renderer {
       ctx.globalCompositeOperation = 'source-over'
     }
     this.ballDraw(g)
+    this.countdown(g)
     ctx.restore()
     this.popups(g)
+  }
+
+  private countdown(g: Game): void {
+    if (g.resumeCountdown <= 0) return
+    const n = Math.ceil(g.resumeCountdown)
+    const frac = g.resumeCountdown - Math.floor(g.resumeCountdown)
+    const b = g.ball
+    const m = g.maze
+    const size = Math.max(46, m.cell * 1.05)
+    const halfW = size * 0.45
+    let x = Math.min(BOARD - halfW - 16, Math.max(halfW + 16, b.x))
+    let y = b.y - b.r - m.cell * 0.7
+    if (y < size + 20) y = b.y + b.r + size
+    y = Math.min(BOARD - 24, Math.max(size + 14, y))
+    const ctx = this.ctx
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.strokeStyle = `rgba(103,232,249,${(frac * 0.5).toFixed(3)})`
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.arc(b.x, b.y, b.r + m.cell * 1.2 * (1 - frac), 0, Math.PI * 2)
+    ctx.stroke()
+    ctx.restore()
+    ctx.save()
+    ctx.translate(x, y)
+    const pop = 1 + 0.25 * Math.pow(frac, 2)
+    ctx.scale(pop, pop)
+    ctx.shadowColor = '#22d3ee'
+    ctx.shadowBlur = 30
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'middle'
+    ctx.font = `700 ${Math.round(size)}px "Segoe UI", system-ui, sans-serif`
+    ctx.fillStyle = 'rgba(165,243,252,0.95)'
+    ctx.fillText(String(n), 0, 0)
+    ctx.restore()
   }
 
   private zonesFx(g: Game): void {
