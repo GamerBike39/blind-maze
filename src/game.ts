@@ -522,7 +522,7 @@ export class Game {
     }
     if (this.drainT >= 0) {
       const q = Math.min(1, this.drainT / this.drainDur)
-      const cut = q * q * (3 - 2 * q)
+      const cut = Math.pow(q, 2.6)
       return { u: 1, cut, alpha: 0.9 - 0.35 * q }
     }
     return null
