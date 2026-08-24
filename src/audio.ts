@@ -10,6 +10,12 @@ export class SoundEngine {
   private comboOscA: OscillatorNode | null = null
   private comboOscB: OscillatorNode | null = null
   private nearGain: GainNode | null = null
+  private volume = 0.85
+
+  setVolume(v01: number): void {
+    this.volume = Math.max(0, Math.min(1, v01)) * 0.9
+    if (this.master) this.master.gain.value = this.volume
+  }
 
   unlock(): void {
     try {
@@ -17,7 +23,7 @@ export class SoundEngine {
         const c = new AudioContext()
         this.ctx = c
         this.master = c.createGain()
-        this.master.gain.value = 0.85
+        this.master.gain.value = this.volume
         this.master.connect(c.destination)
         const len = Math.floor(c.sampleRate * 0.7)
         const buf = c.createBuffer(1, len, c.sampleRate)

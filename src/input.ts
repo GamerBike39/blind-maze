@@ -62,10 +62,13 @@ export class Input {
   private startFlag = false
   private pauseFlag = false
   private flashFlag = false
+  private resetFlag = false
   private menuDirFlag = 0
   private prevMenuLeft = false
   private prevMenuRight = false
   private prevKeyG = false
+  private prevKeyR = false
+  vibrationEnabled = true
 
   private ptrX = window.innerWidth / 2
   private ptrY = window.innerHeight / 2
@@ -259,6 +262,9 @@ export class Input {
     const keyG = this.keys.has('KeyG')
     const keyGEdge = keyG && !this.prevKeyG
     this.prevKeyG = keyG
+    const keyR = this.keys.has('KeyR')
+    const resetEdge = keyR && !this.prevKeyR
+    this.prevKeyR = keyR
     const menuLeft = (gp?.buttons[14]?.pressed ?? false) || this.keys.has('ArrowLeft')
     const menuRight = (gp?.buttons[15]?.pressed ?? false) || this.keys.has('ArrowRight')
     let menuDir = 0
@@ -270,6 +276,7 @@ export class Input {
     this.startFlag = edge || keyEdge || this.tapFlag
     this.pauseFlag = pauseEdge || pauseKeyEdge
     this.flashFlag = flashBtn || keyGEdge || this.dblFlag
+    this.resetFlag = resetEdge
     this.menuDirFlag = menuDir
     this.tapFlag = false
     this.dblFlag = false
@@ -296,6 +303,12 @@ export class Input {
   pauseEdge(): boolean {
     const s = this.pauseFlag
     this.pauseFlag = false
+    return s
+  }
+
+  resetEdge(): boolean {
+    const s = this.resetFlag
+    this.resetFlag = false
     return s
   }
 
@@ -388,6 +401,7 @@ export class Input {
   }
 
   rumble(strong: number, weak: number, ms: number): void {
+    if (!this.vibrationEnabled) return
     const gp = this.pad() as PadWithRumble | null
     const act = gp?.vibrationActuator
     if (act) {

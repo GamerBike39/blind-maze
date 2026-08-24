@@ -39,6 +39,60 @@ const modeRows = MODES.map((m) => {
 const btnPause = document.getElementById('btn-pause')!
 btnPause.addEventListener('click', () => game.togglePause())
 
+const btnReset = document.getElementById('btn-reset')!
+btnReset.addEventListener('click', () => game.resetLevel())
+
+const SETTINGS_KEY = 'labyrinthe-settings'
+interface Settings {
+  vol: number
+  vib: boolean
+  trail: number
+}
+const DEFAULTS: Settings = { vol: 85, vib: true, trail: 1 }
+function loadSettings(): Settings {
+  try {
+    const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>
+    return { ...DEFAULTS, ...s }
+  } catch {
+    return { ...DEFAULTS }
+  }
+}
+
+const setVol = document.getElementById('set-vol') as HTMLInputElement
+const setVib = document.getElementById('set-vib') as HTMLInputElement
+const setTrail = document.getElementById('set-trail') as HTMLSelectElement
+const setWipe = document.getElementById('set-wipe') as HTMLButtonElement
+
+function saveSettings(): void {
+  try {
+    localStorage.setItem(
+      SETTINGS_KEY,
+      JSON.stringify({ vol: Number(setVol.value), vib: setVib.checked, trail: Number(setTrail.value) }),
+    )
+  } catch {}
+}
+setVol.addEventListener('input', () => {
+  audio.setVolume(Number(setVol.value) / 100)
+  saveSettings()
+})
+setVib.addEventListener('change', () => {
+  input.vibrationEnabled = setVib.checked
+  saveSettings()
+})
+setTrail.addEventListener('change', () => {
+  game.trailUserMul = Number(setTrail.value)
+  saveSettings()
+})
+setWipe.addEventListener('click', () => {
+  try {
+    Object.keys(localStorage)
+      .filter((k) => k.startsWith('labyrinthe-'))
+      .forEach((k) => localStorage.removeItem(k))
+  } catch {}
+  setWipe.textContent = 'Effacé !'
+  setTimeout(() => (setWipe.textContent = 'Effacer records & tops'), 1500)
+})
+
 overlay.addEventListener('click', () => {
   if (!overlay.classList.contains('hidden')) input.pressStart()
 })
@@ -155,17 +209,56 @@ function animateStats(grid: HTMLElement): void {
 
 let ovPhase: Phase | null = null
 let ovMode = -1
+let ovKind: string | null = null
 
 function startWord(): string {
   return { pad: 'Ⓐ', touch: 'Tape', mouse: 'Clic' }[game.controlKind()]
 }
 
+function deviceLines(k: 'pad' | 'touch' | 'mouse'): [string, string][] {
+  if (k === 'pad') {
+    return [
+      ['Stick gauche', 'Rouler'],
+      ['Stick droit', 'Palper'],
+      ['RB', 'Éclair'],
+      ['Start', 'Pause'],
+    ]
+  }
+  if (k === 'touch') {
+    return [
+      ['Moitié gauche', 'Rouler (pan 1:1)'],
+      ['Moitié droite', 'Palper'],
+      ['Tap court', 'Valider'],
+      ['Bouton ⏸', 'Pause'],
+    ]
+  }
+  return [
+    ['Clic sur la balle + glisser', 'Guider'],
+    ['Double-clic', 'Éclair'],
+    ['Clic droit maintenu', 'Palper'],
+  ]
+}
+
+const ctrlDevice = document.getElementById('ctrl-device')!
+
+function syncCtrlDevice(k: 'pad' | 'touch' | 'mouse'): void {
+  const label = k === 'pad' ? 'Manette' : k === 'touch' ? 'Tactile' : 'Souris'
+  ctrlDevice.innerHTML =
+    `<div class="dev-tag">${label}</div>` +
+    deviceLines(k)
+      .map(([a, b]) => `<div class="ctrl-line"><b>${a}</b><span>${b}</span></div>`)
+      .join('')
+}
+
 function syncOverlay(): void {
   const p = game.phase
   const mi = p === 'ready' ? game.modeIndex : -1
-  if (p === ovPhase && mi === ovMode) return
+  const kind = game.controlKind()
+  if (p === ovPhase && mi === ovMode && kind === ovKind) return
   ovPhase = p
   ovMode = mi
+  ovKind = kind
+  syncCtrlDevice(kind)
 
   if (p === 'playing' || p === 'preview') {
     overlay.classList.add('hidden')
@@ -173,6 +266,10 @@ function syncOverlay(): void {
     overlay.classList.remove('hidden')
   }
   btnPause.classList.toggle(
+    'on',
+    p === 'playing' || p === 'preview' || p === 'paused',
+  )
+  btnReset.classList.toggle(
     'on',
     p === 'playing' || p === 'preview' || p === 'paused',
   )
@@ -303,6 +400,16 @@ const audio = new SoundEngine()
 const game = new Game(input, audio)
 const renderer = new Renderer(canvas)
 const bg = new Background(document.getElementById('bg') as HTMLCanvasElement)
+
+{
+  const s = loadSettings()
+  setVol.value = String(s.vol)
+  setVib.checked = s.vib
+  setTrail.value = String(s.trail)
+  audio.setVolume(s.vol / 100)
+  input.vibrationEnabled = s.vib
+  game.trailUserMul = s.trail
+}
 
 let stageRect = document.getElementById('stage')!.getBoundingClientRect()
 function refreshStageRect(): void {

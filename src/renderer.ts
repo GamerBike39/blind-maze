@@ -30,7 +30,7 @@ export class Renderer {
       this.tctx.clearRect(0, 0, BOARD, BOARD)
     }
     this.tctx.globalCompositeOperation = 'destination-out'
-    const k = Math.min(0.92, 0.3 * g.mode.trailFadeMul)
+    const k = Math.min(0.95, 0.3 * g.mode.trailFadeMul * g.trailUserMul)
     this.tctx.fillStyle = `rgba(0,0,0,${(1 - Math.pow(k, dt)).toFixed(4)})`
     this.tctx.fillRect(0, 0, BOARD, BOARD)
     this.tctx.globalCompositeOperation = 'source-over'

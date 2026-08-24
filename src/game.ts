@@ -356,6 +356,7 @@ export class Game {
       if (this.phase === 'playing' || this.phase === 'preview') this.enterPause()
       else if (this.phase === 'paused') this.exitPause()
     }
+    if (this.input.resetEdge()) this.resetLevel()
     if (this.phase === 'paused') {
       if (this.input.startEdge()) this.exitPause()
       return
@@ -552,6 +553,21 @@ export class Game {
   togglePause(): void {
     if (this.phase === 'paused') this.exitPause()
     else this.requestPause()
+  }
+
+  trailUserMul = 1
+
+  resetLevel(): void {
+    if (this.phase !== 'playing' && this.phase !== 'preview' && this.phase !== 'paused') return
+    this.resumePhase = null
+    this.reveals.clear()
+    this.trailEpoch++
+    this.resetBall()
+    this.levelTime = 0
+    this.resetLevelStats()
+    this.drainT = -1
+    this.previewT = 0
+    this.phase = 'playing'
   }
 
   controlKind(): 'pad' | 'touch' | 'mouse' {
