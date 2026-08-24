@@ -70,12 +70,17 @@ export class Input {
   private ptrX = window.innerWidth / 2
   private ptrY = window.innerHeight / 2
   private rmb = false
-  private lmb = false
+  private grabbed = false
+  private lastClickT = -1e9
+  private lastClickX = 0
+  private lastClickY = 0
+  private dblFlag = false
   private viewL = 0
   private viewT = 0
   private viewScale = 1
   private ballBX = 0
   private ballBY = 0
+  private ballR = 12
 
   private touchMove: TouchStick | null = null
   private touchProbe: TouchStick | null = null
@@ -94,7 +99,7 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear()
       this.rmb = false
-      this.lmb = false
+      this.grabbed = false
       this.touchMove = null
       this.touchProbe = null
     })
@@ -121,7 +126,24 @@ export class Input {
 
   private onDown(e: PointerEvent): void {
     if (e.pointerType === 'mouse') {
-      if (e.button === 0) this.lmb = true
+      if (e.button === 0) {
+        const bsx = this.viewL + this.ballBX * this.viewScale
+        const bsy = this.viewT + this.ballBY * this.viewScale
+        const rad = Math.max(18, this.ballR * this.viewScale * 1.7)
+        if (Math.hypot(e.clientX - bsx, e.clientY - bsy) <= rad) this.grabbed = true
+        const now = performance.now()
+        if (
+          now - this.lastClickT < 350 &&
+          Math.hypot(e.clientX - this.lastClickX, e.clientY - this.lastClickY) < 22
+        ) {
+          this.dblFlag = true
+          this.lastClickT = -1e9
+        } else {
+          this.lastClickT = now
+          this.lastClickX = e.clientX
+          this.lastClickY = e.clientY
+        }
+      }
       if (e.button === 2) this.rmb = true
       return
     }
@@ -155,7 +177,9 @@ export class Input {
 
   private onUp(e: PointerEvent): void {
     if (e.pointerType === 'mouse') {
-      if (e.button === 0) this.lmb = false
+      if (e.button === 0) {
+        this.grabbed = false
+      }
       if (e.button === 2) this.rmb = false
       return
     }
@@ -177,9 +201,10 @@ export class Input {
     this.viewScale = scale
   }
 
-  setBallPos(x: number, y: number): void {
+  setBallPos(x: number, y: number, r: number = 12): void {
     this.ballBX = x
     this.ballBY = y
+    this.ballR = r
   }
 
   private ptrBoard(): BoardPos {
@@ -197,7 +222,7 @@ export class Input {
         y: this.ballBY + tm.dy / this.viewScale,
       }
     }
-    if (this.lmb) return this.ptrBoard()
+    if (this.grabbed) return this.ptrBoard()
     return null
   }
 
@@ -242,9 +267,10 @@ export class Input {
     this.prevKeys = new Set(this.keys)
     this.startFlag = edge || keyEdge || this.tapFlag
     this.pauseFlag = pauseEdge || pauseKeyEdge
-    this.flashFlag = flashBtn || keyGEdge
+    this.flashFlag = flashBtn || keyGEdge || this.dblFlag
     this.menuDirFlag = menuDir
     this.tapFlag = false
+    this.dblFlag = false
   }
 
   menuDir(): number {
