@@ -117,7 +117,7 @@ export const MODES: Mode[] = [
   {
     id: 'classique',
     name: 'CLASSIQUE',
-    desc: "L'expérience Koh-Lanta telle qu'elle a été pensée · ⚡3/niveau",
+    desc: "L'expérience Koh-Lanta telle qu'elle a été pensée · ⚡3/niveau · 1er choc sur mur palpé pardonné",
     mult: 1,
     revealLifeMul: 1,
     trailFadeMul: 1,
@@ -222,6 +222,7 @@ export class Game {
   private levelImpacts = 0
   private levelImpactsKnown = 0
   private levelProbed = new Set<number>()
+  private probedForgiven = new Set<number>()
   private knownWalls = new Set<number>()
   private impactAt = new Map<number, number>()
   private lastImpactAny = -1
@@ -638,6 +639,7 @@ export class Game {
     this.levelImpacts = 0
     this.levelImpactsKnown = 0
     this.levelProbed.clear()
+    this.probedForgiven.clear()
     this.knownWalls.clear()
     this.impactAt.clear()
     this.lastImpactAny = -1
@@ -827,18 +829,23 @@ export class Game {
             this.levelImpacts++
             const known = this.knownWalls.has(id)
             if (known) this.levelImpactsKnown++
-            const cost = known ? IMPACT_KNOWN_COST : IMPACT_UNKNOWN_COST
-            this.levelImpactPen += cost
-            this.levelPoints = Math.max(0, this.levelPoints - cost)
-            this.chain = 0
-            this.mult = 1
-            this.popup(
-              b.x,
-              b.y - b.r - 8,
-              `-${cost}${known ? ' CONNU' : ''}`,
-              '#fda4af',
-              known ? 1.2 : 1,
-            )
+            if (!this.probedForgiven.has(id) && this.levelProbed.has(id)) {
+              this.probedForgiven.add(id)
+              this.popup(b.x, b.y - b.r - 8, 'MUR PALPÉ · PARDONNÉ', '#c4b5fd', 1.05)
+            } else {
+              const cost = known ? IMPACT_KNOWN_COST : IMPACT_UNKNOWN_COST
+              this.levelImpactPen += cost
+              this.levelPoints = Math.max(0, this.levelPoints - cost)
+              this.chain = 0
+              this.mult = 1
+              this.popup(
+                b.x,
+                b.y - b.r - 8,
+                `-${cost}${known ? ' CONNU' : ''}`,
+                '#fda4af',
+                known ? 1.2 : 1,
+              )
+            }
             this.softReveal(id, 1, 'hit')
             const rv = this.reveals.get(id)
             if (rv) rv.w = Math.min(1, (rv.w ?? 0) + 0.35 + 0.65 * s)
