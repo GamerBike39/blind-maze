@@ -243,6 +243,10 @@ export class Game {
   private speedNorm = 0
   private exitGlow = 0
 
+  get motion(): number {
+    return this.speedNorm
+  }
+
   constructor(
     private input: Input,
     private audio: SoundEngine,

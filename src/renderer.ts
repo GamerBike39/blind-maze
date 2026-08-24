@@ -1,11 +1,31 @@
 import { BOARD, type Game } from './game'
 
+function makeGlow(rgb: string): HTMLCanvasElement {
+  const c = document.createElement('canvas')
+  c.width = 64
+  c.height = 64
+  const g = c.getContext('2d')!
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32)
+  grad.addColorStop(0, `rgba(${rgb},1)`)
+  grad.addColorStop(0.28, `rgba(${rgb},0.42)`)
+  grad.addColorStop(1, `rgba(${rgb},0)`)
+  g.fillStyle = grad
+  g.fillRect(0, 0, 64, 64)
+  return c
+}
+
 export class Renderer {
   private ctx: CanvasRenderingContext2D
   private tctx: CanvasRenderingContext2D
   private trail: HTMLCanvasElement
   private bg: CanvasGradient
   private epoch = -1
+  private parts: { x: number; y: number; r: number; l: number; c: number; a: number; tw: number; ph: number }[] = []
+  private sprCyan!: HTMLCanvasElement
+  private sprViolet!: HTMLCanvasElement
+  private sprGray!: HTMLCanvasElement
+  private nebX = BOARD / 2
+  private nebY = BOARD / 2
 
   constructor(canvas: HTMLCanvasElement) {
     const dpr = Math.min(2, window.devicePixelRatio || 1)
@@ -22,6 +42,63 @@ export class Renderer {
     grad.addColorStop(0, '#0c1226')
     grad.addColorStop(1, '#05060d')
     this.bg = grad
+    this.buildDecor()
+  }
+
+  private buildDecor(): void {
+    this.sprCyan = makeGlow('34,211,238')
+    this.sprViolet = makeGlow('139,92,246')
+    this.sprGray = makeGlow('148,163,184')
+    for (let i = 0; i < 150; i++) {
+      const l = i % 3
+      this.parts.push({
+        x: -40 + Math.random() * (BOARD + 80),
+        y: -40 + Math.random() * (BOARD + 80),
+        r: [0.9, 1.25, 1.7][l] * (0.7 + Math.random() * 0.7),
+        l,
+        c: Math.random() < 0.45 ? 0 : Math.random() < 0.87 ? 1 : 2,
+        a: [0.09, 0.12, 0.16][l],
+        tw: 0.5 + Math.random() * 1.4,
+        ph: Math.random() * Math.PI * 2,
+      })
+    }
+  }
+
+  private bgDecor(g: Game, dt: number): void {
+    const ctx = this.ctx
+    const k = Math.min(1, dt * 2.2)
+    this.nebX += (g.ball.x - this.nebX) * k
+    this.nebY += (g.ball.y - this.nebY) * k
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    const ns = 340 + 70 * g.motion
+    ctx.globalAlpha = 0.06 + 0.03 * g.motion
+    ctx.drawImage(this.sprGray, this.nebX - ns / 2, this.nebY - ns / 2, ns, ns)
+    const R = Math.max(170, g.maze.cell * 3)
+    const px = (g.ball.x - BOARD / 2) / (BOARD / 2)
+    const py = (g.ball.y - BOARD / 2) / (BOARD / 2)
+    for (const p of this.parts) {
+      const depth = [0.3, 0.55, 0.85][p.l]
+      let x = p.x - px * 20 * depth
+      let y = p.y - py * 20 * depth
+      let s = p.r * (1 + g.motion * 0.25)
+      const dx = x - g.ball.x
+      const dy = y - g.ball.y
+      const d2 = dx * dx + dy * dy
+      if (d2 < R * R) {
+        const d = Math.sqrt(d2) || 1
+        const f = 1 - d / R
+        const push = f * f * (6 + 26 * g.motion) * depth
+        x += (dx / d) * push
+        y += (dy / d) * push
+        s *= 1 + f * (0.35 + 0.55 * g.motion)
+      }
+      ctx.globalAlpha = p.a * (0.72 + 0.28 * Math.sin(g.clock * p.tw + p.ph))
+      const half = s * 9
+      const spr = p.c === 0 ? this.sprCyan : p.c === 1 ? this.sprViolet : this.sprGray
+      ctx.drawImage(spr, x - half, y - half, half * 2, half * 2)
+    }
+    ctx.restore()
   }
 
   draw(g: Game, dt: number): void {
@@ -57,6 +134,7 @@ export class Renderer {
     const ctx = this.ctx
     ctx.fillStyle = this.bg
     ctx.fillRect(0, 0, BOARD, BOARD)
+    this.bgDecor(g, dt)
     ctx.save()
     if (g.shake > 0) {
       ctx.translate((Math.random() * 2 - 1) * g.shake * 8, (Math.random() * 2 - 1) * g.shake * 8)
