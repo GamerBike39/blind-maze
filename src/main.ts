@@ -1,8 +1,9 @@
 import './style.css'
 import { Input } from './input'
-import { Game, MODES, RUN_LENGTH, fmtTime, type Phase } from './game'
+import { BOARD, Game, MODES, RUN_LENGTH, fmtTime, type Phase } from './game'
 import { Renderer } from './renderer'
 import { SoundEngine } from './audio'
+import { Background } from './bg'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const hudLevel = document.getElementById('hud-level')!
@@ -244,6 +245,14 @@ const input = new Input()
 const audio = new SoundEngine()
 const game = new Game(input, audio)
 const renderer = new Renderer(canvas)
+const bg = new Background(document.getElementById('bg') as HTMLCanvasElement)
+
+let stageRect = document.getElementById('stage')!.getBoundingClientRect()
+function refreshStageRect(): void {
+  stageRect = document.getElementById('stage')!.getBoundingClientRect()
+}
+window.addEventListener('resize', refreshStageRect)
+document.addEventListener('fullscreenchange', refreshStageRect)
 
 window.addEventListener('keydown', () => audio.unlock())
 window.addEventListener('pointerdown', () => audio.unlock())
@@ -269,6 +278,14 @@ function frame(now: number): void {
   input.poll()
   game.update(dt)
   renderer.draw(game, dt)
+  const scale = stageRect.width / BOARD
+  bg.frame(
+    stageRect.left + game.ball.x * scale,
+    stageRect.top + game.ball.y * scale,
+    game.motion,
+    dt,
+    game.clock,
+  )
 
   hudTime.textContent = fmtTime(game.totalTime)
   hudLevel.textContent = `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}`

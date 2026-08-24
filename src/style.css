@@ -22,8 +22,16 @@ body {
   overflow: hidden;
 }
 
+#bg {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  display: block;
+}
+
 #stage {
   position: relative;
+  z-index: 1;
   width: min(96vmin, 980px);
 }
 
