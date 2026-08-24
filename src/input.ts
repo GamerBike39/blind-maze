@@ -23,9 +23,12 @@ export interface StickView {
   ky: number
 }
 
+interface BoardPos {
+  x: number
+  y: number
+}
+
 const DZ = 0.18
-const TOUCH_RADIUS = 60
-const MOUSE_PPU = 95
 const PREVENT = new Set(['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'])
 
 const ZERO: Stick = { x: 0, y: 0, m: 0 }
@@ -66,10 +69,13 @@ export class Input {
 
   private ptrX = window.innerWidth / 2
   private ptrY = window.innerHeight / 2
-  private ptrT = -1e9
   private rmb = false
-  private anchorX = 0
-  private anchorY = 0
+  private lmb = false
+  private viewL = 0
+  private viewT = 0
+  private viewScale = 1
+  private ballBX = 0
+  private ballBY = 0
 
   private touchMove: TouchStick | null = null
   private touchProbe: TouchStick | null = null
@@ -88,11 +94,16 @@ export class Input {
     window.addEventListener('blur', () => {
       this.keys.clear()
       this.rmb = false
+      this.lmb = false
       this.touchMove = null
       this.touchProbe = null
     })
     window.addEventListener('contextmenu', (e) => e.preventDefault())
-    window.addEventListener('pointermove', (e) => this.onMove(e))
+    window.addEventListener('pointermove', (e) => {
+      if (e.pointerType !== 'mouse') return
+      this.ptrX = e.clientX
+      this.ptrY = e.clientY
+    })
     window.addEventListener('pointerdown', (e) => this.onDown(e))
     window.addEventListener('pointerup', (e) => this.onUp(e))
     window.addEventListener('pointercancel', (e) => this.onCancel(e))
@@ -108,24 +119,9 @@ export class Input {
     })
   }
 
-  private onMove(e: PointerEvent): void {
-    this.ptrX = e.clientX
-    this.ptrY = e.clientY
-    this.ptrT = performance.now()
-    const mv = this.touchMove
-    if (mv && e.pointerId === mv.id) {
-      mv.dx = e.clientX - mv.ax
-      mv.dy = e.clientY - mv.ay
-    }
-    const pr = this.touchProbe
-    if (pr && e.pointerId === pr.id) {
-      pr.dx = e.clientX - pr.ax
-      pr.dy = e.clientY - pr.ay
-    }
-  }
-
   private onDown(e: PointerEvent): void {
     if (e.pointerType === 'mouse') {
+      if (e.button === 0) this.lmb = true
       if (e.button === 2) this.rmb = true
       return
     }
@@ -134,9 +130,21 @@ export class Input {
     const half = window.innerWidth / 2
     if (!overUi) {
       if (e.clientX < half && !this.touchMove) {
-        this.touchMove = { id: e.pointerId, ax: e.clientX, ay: e.clientY, dx: 0, dy: 0 }
+        this.touchMove = {
+          id: e.pointerId,
+          ax: e.clientX,
+          ay: e.clientY,
+          dx: 0,
+          dy: 0,
+        }
       } else if (!this.touchProbe) {
-        this.touchProbe = { id: e.pointerId, ax: e.clientX, ay: e.clientY, dx: 0, dy: 0 }
+        this.touchProbe = {
+          id: e.pointerId,
+          ax: e.clientX,
+          ay: e.clientY,
+          dx: 0,
+          dy: 0,
+        }
       }
     }
     this.tapAt = performance.now()
@@ -147,6 +155,7 @@ export class Input {
 
   private onUp(e: PointerEvent): void {
     if (e.pointerType === 'mouse') {
+      if (e.button === 0) this.lmb = false
       if (e.button === 2) this.rmb = false
       return
     }
@@ -162,9 +171,34 @@ export class Input {
     if (this.touchProbe?.id === e.pointerId) this.touchProbe = null
   }
 
-  setPointerAnchor(x: number, y: number): void {
-    this.anchorX = x
-    this.anchorY = y
+  setPointerView(left: number, top: number, scale: number): void {
+    this.viewL = left
+    this.viewT = top
+    this.viewScale = scale
+  }
+
+  setBallPos(x: number, y: number): void {
+    this.ballBX = x
+    this.ballBY = y
+  }
+
+  private ptrBoard(): BoardPos {
+    return {
+      x: (this.ptrX - this.viewL) / this.viewScale,
+      y: (this.ptrY - this.viewT) / this.viewScale,
+    }
+  }
+
+  directMove(): BoardPos | null {
+    const tm = this.touchMove
+    if (tm) {
+      return {
+        x: this.ballBX + tm.dx / this.viewScale,
+        y: this.ballBY + tm.dy / this.viewScale,
+      }
+    }
+    if (this.lmb) return this.ptrBoard()
+    return null
   }
 
   uiSticks(): { move: StickView | null; probe: StickView | null } {
@@ -264,29 +298,37 @@ export class Input {
   }
 
   leftStick(): Stick {
-    const tm = this.touchMove
-    if (tm) return stick(tm.dx / TOUCH_RADIUS, tm.dy / TOUCH_RADIUS)
+    if (this.touchMove) return ZERO
     const gp = this.pad()
     if (gp) return stick(gp.axes[0] ?? 0, gp.axes[1] ?? 0)
-    const fresh = performance.now() - this.ptrT < 2000
-    if (!this.keysActive() && fresh) {
-      return stick((this.ptrX - this.anchorX) / MOUSE_PPU, (this.ptrY - this.anchorY) / MOUSE_PPU)
-    }
-    return this.keyVec('KeyA', 'KeyD', 'KeyW', 'KeyS')
+    if (this.keysActive()) return this.keyVec('KeyA', 'KeyD', 'KeyW', 'KeyS')
+    return ZERO
   }
 
   rightStick(): Stick {
     const tp = this.touchProbe
-    if (tp) return stick(tp.dx / TOUCH_RADIUS, tp.dy / TOUCH_RADIUS)
+    if (tp) {
+      const fx = (tp.ax + tp.dx - this.viewL) / this.viewScale
+      const fy = (tp.ay + tp.dy - this.viewT) / this.viewScale
+      const dx = fx - this.ballBX
+      const dy = fy - this.ballBY
+      const d = Math.hypot(dx, dy)
+      if (d > 6) {
+        const mag = Math.min(1, d / 55)
+        return stick((dx / d) * mag, (dy / d) * mag)
+      }
+      return ZERO
+    }
     const gp = this.pad()
     if (gp) return stick(gp.axes[2] ?? 0, gp.axes[3] ?? 0)
     if (this.rmb) {
-      const dx = this.ptrX - this.anchorX
-      const dy = this.ptrY - this.anchorY
+      const p = this.ptrBoard()
+      const dx = p.x - this.ballBX
+      const dy = p.y - this.ballBY
       const d = Math.hypot(dx, dy)
-      if (d > 4) {
-        const m = Math.min(1, d / (MOUSE_PPU * 0.7))
-        return stick((dx / d) * m, (dy / d) * m)
+      if (d > 6) {
+        const mag = Math.min(1, d / 55)
+        return stick((dx / d) * mag, (dy / d) * mag)
       }
     }
     return this.keyVec('ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown')

@@ -190,7 +190,7 @@ function syncOverlay(): void {
       ? '◀ ▶ mode · Ⓐ ou Entrée pour lancer'
       : matchMedia('(pointer: coarse)').matches
         ? '◀ ▶ modes (touche les lignes) · tape l\u2019écran pour lancer\nMoitié gauche : rouler · moitié droite : palper'
-        : 'Souris : la balle suit le curseur · clic droit : palper · ◀ ▶ mode · Ⓐ / Entrée lancer'
+        : 'Clic gauche maintenu : guider la balle · clic droit : palper · ◀ ▶ mode · Ⓐ / Entrée lancer'
   } else if (p === 'paused') {
     ovKicker.textContent = ''
     overlayTitle.textContent = game.messageTitle
@@ -330,7 +330,8 @@ function frame(now: number): void {
   const bx = stageRect.left + game.ball.x * scale
   const by = stageRect.top + game.ball.y * scale
   bg.frame(bx, by, game.motion, dt, game.clock)
-  input.setPointerAnchor(bx, by)
+  input.setPointerView(stageRect.left, stageRect.top, scale)
+  input.setBallPos(game.ball.x, game.ball.y)
   const sv = input.uiSticks()
   showStick('move', sv.move)
   showStick('probe', sv.probe)

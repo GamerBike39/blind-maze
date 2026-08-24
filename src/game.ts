@@ -677,17 +677,28 @@ export class Game {
 
   private physics(dt: number): void {
     const b = this.ball
-    const st = this.input.leftStick()
-    b.vx += st.x * 3400 * dt
-    b.vy += st.y * 3400 * dt
-    const damp = Math.exp(-2.8 * dt)
-    b.vx *= damp
-    b.vy *= damp
-    const sp = Math.hypot(b.vx, b.vy)
-    const maxSp = this.maze.cell * 5.2
+    const dm = this.input.directMove()
+    if (dm) {
+      const k = Math.min(1, dt * 24)
+      b.vx = ((dm.x - b.x) * k) / dt
+      b.vy = ((dm.y - b.y) * k) / dt
+      const fd = Math.exp(-0.6 * dt)
+      b.vx *= fd
+      b.vy *= fd
+    } else {
+      const st = this.input.leftStick()
+      b.vx += st.x * 3400 * dt
+      b.vy += st.y * 3400 * dt
+      const damp = Math.exp(-2.8 * dt)
+      b.vx *= damp
+      b.vy *= damp
+    }
+    const maxSp = this.maze.cell * 5.2 * (dm ? 1.6 : 1)
+    let sp = Math.hypot(b.vx, b.vy)
     if (sp > maxSp) {
       b.vx *= maxSp / sp
       b.vy *= maxSp / sp
+      sp = maxSp
     }
     const steps = Math.min(5, Math.max(1, Math.ceil((sp * dt) / (this.maze.th * 0.8))))
     const sdt = dt / steps
