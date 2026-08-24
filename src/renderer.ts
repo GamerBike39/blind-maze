@@ -1,4 +1,4 @@
-import { BOARD, type Game } from './game'
+import { BOARD, type Arena, type Game } from './game'
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D
@@ -37,7 +37,7 @@ export class Renderer {
 
     const dx = g.ball.x - g.trailX
     const dy = g.ball.y - g.trailY
-    if (dx * dx + dy * dy > 0.2) {
+    if (!g.arena && dx * dx + dy * dy > 0.2) {
       const t = this.tctx
       t.lineCap = 'round'
       t.lineJoin = 'round'
@@ -61,30 +61,203 @@ export class Renderer {
     if (g.shake > 0) {
       ctx.translate((Math.random() * 2 - 1) * g.shake * 8, (Math.random() * 2 - 1) * g.shake * 8)
     }
-    this.dots(g)
-    this.previewPath(g)
-    this.previewPrompt(g)
-    const sinceFlash = g.clock - g.flashAt
-    if (sinceFlash >= 0 && sinceFlash < 0.5) {
-      const q = sinceFlash / 0.5
-      ctx.strokeStyle = `rgba(199,250,255,${((1 - q) * 0.8).toFixed(3)})`
-      ctx.lineWidth = g.maze.cell * 0.12 * (1 - q * 0.5)
-      ctx.beginPath()
-      ctx.arc(g.ball.x, g.ball.y, q * g.maze.cell * 3.2, 0, Math.PI * 2)
-      ctx.stroke()
+    const arena = g.arena
+    if (!arena) {
+      this.dots(g)
+      this.zonesFx(g)
+      this.previewPath(g)
+      this.previewPrompt(g)
+      const sinceFlash = g.clock - g.flashAt
+      if (sinceFlash >= 0 && sinceFlash < 0.5) {
+        const q = sinceFlash / 0.5
+        ctx.strokeStyle = `rgba(199,250,255,${((1 - q) * 0.8).toFixed(3)})`
+        ctx.lineWidth = g.maze.cell * 0.12 * (1 - q * 0.5)
+        ctx.beginPath()
+        ctx.arc(g.ball.x, g.ball.y, q * g.maze.cell * 3.2, 0, Math.PI * 2)
+        ctx.stroke()
+      }
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.drawImage(this.trail, 0, 0, BOARD, BOARD)
+      this.particles(g)
+      ctx.globalCompositeOperation = 'source-over'
+      this.revealed(g)
+      this.sonarRing(g)
+      this.startMark(g)
+      this.exitMark(g)
+      this.portalMark(g)
+      this.hand(g)
+    } else {
+      this.arenaScene(g, arena)
+      ctx.globalCompositeOperation = 'lighter'
+      this.particles(g)
+      ctx.globalCompositeOperation = 'source-over'
     }
-    ctx.globalCompositeOperation = 'lighter'
-    ctx.drawImage(this.trail, 0, 0, BOARD, BOARD)
-    this.particles(g)
-    ctx.globalCompositeOperation = 'source-over'
-    this.revealed(g)
-    this.sonarRing(g)
-    this.startMark(g)
-    this.exitMark(g)
-    this.hand(g)
     this.ballDraw(g)
     ctx.restore()
     this.popups(g)
+  }
+
+  private zonesFx(g: Game): void {
+    const ctx = this.ctx
+    const m = g.maze
+    for (const z of g.zones) {
+      ctx.fillStyle = z.kind === 'courant' ? 'rgba(34,211,238,0.05)' : 'rgba(88,28,135,0.10)'
+      ctx.fillRect(z.x, z.y, z.w, z.h)
+      ctx.setLineDash([5, 5])
+      ctx.strokeStyle = z.kind === 'courant' ? 'rgba(34,211,238,0.25)' : 'rgba(167,139,250,0.30)'
+      ctx.lineWidth = 1.2
+      ctx.strokeRect(z.x, z.y, z.w, z.h)
+      ctx.setLineDash([])
+      if (z.kind === 'courant') {
+        const ang = Math.atan2(z.dy, z.dx)
+        const s = m.cell * 0.11
+        const spacing = m.cell * 0.85
+        const off = (g.clock * m.cell * 1.35) % spacing
+        ctx.save()
+        ctx.beginPath()
+        ctx.rect(z.x, z.y, z.w, z.h)
+        ctx.clip()
+        ctx.translate(z.x + z.w / 2, z.y + z.h / 2)
+        ctx.rotate(ang)
+        const W = Math.hypot(z.w, z.h) / 2 + m.cell
+        for (let yy = -W; yy <= W; yy += spacing) {
+          for (let xx = -W - spacing + off; xx <= W; xx += spacing) {
+            const a = 0.16 + 0.08 * Math.sin(g.clock * 3 + xx * 0.04 + yy * 0.05)
+            ctx.strokeStyle = `rgba(103,232,249,${a.toFixed(3)})`
+            ctx.lineWidth = 2
+            ctx.beginPath()
+            ctx.moveTo(xx - s, yy - s)
+            ctx.lineTo(xx + s * 0.5, yy)
+            ctx.lineTo(xx - s, yy + s)
+            ctx.stroke()
+          }
+        }
+        ctx.restore()
+      } else {
+        const R = Math.min(z.w, z.h) / 2
+        ctx.fillStyle = 'rgba(3,2,10,0.85)'
+        ctx.beginPath()
+        ctx.arc(z.cx, z.cy, R * 0.42, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.save()
+        ctx.translate(z.cx, z.cy)
+        ctx.rotate(g.clock * 0.5)
+        ctx.setLineDash([4, 7])
+        ctx.strokeStyle = 'rgba(167,139,250,0.4)'
+        ctx.lineWidth = 1.5
+        ctx.beginPath()
+        ctx.arc(0, 0, R * 0.62, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+        for (let i = 0; i < 9; i++) {
+          const a = g.clock * (0.9 + i * 0.17) + i * 2.1
+          const rad = R * (0.3 + 0.17 * ((i % 3) + 0.4))
+          const x = z.cx + Math.cos(a) * rad
+          const y = z.cy + Math.sin(a) * rad
+          ctx.globalAlpha = 0.35
+          ctx.fillStyle = '#c4b5fd'
+          ctx.beginPath()
+          ctx.arc(x, y, m.th * 0.5, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.globalAlpha = 1
+        }
+      }
+    }
+  }
+
+  private portalMark(g: Game): void {
+    if (g.portalCell === null || g.portalConsumed || g.arena) return
+    const m = g.maze
+    const x = m.ox + (g.portalCell[0] + 0.5) * m.cell
+    const y = m.oy + (g.portalCell[1] + 0.5) * m.cell
+    const p = 0.5 + 0.5 * Math.sin(g.clock * 2.6)
+    const s = m.cell * 0.18
+    const ctx = this.ctx
+    ctx.save()
+    ctx.translate(x, y)
+    ctx.rotate(Math.PI / 4 + g.clock * 1.4)
+    ctx.shadowColor = '#fb923c'
+    ctx.shadowBlur = 14 + 10 * p
+    ctx.strokeStyle = `rgba(251,146,60,${(0.5 + 0.45 * p).toFixed(3)})`
+    ctx.lineWidth = 2.5
+    ctx.strokeRect(-s, -s, s * 2, s * 2)
+    ctx.fillStyle = `rgba(253,186,116,${(0.5 + 0.4 * p).toFixed(3)})`
+    ctx.beginPath()
+    ctx.arc(0, 0, m.cell * 0.07, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
+  }
+
+  private arenaScene(g: Game, A: Arena): void {
+    const ctx = this.ctx
+    ctx.fillStyle = 'rgba(2,2,8,0.55)'
+    ctx.fillRect(0, 0, BOARD, BOARD)
+    ctx.fillStyle = 'rgba(10,7,20,0.6)'
+    ctx.beginPath()
+    ctx.roundRect(A.Ax, A.Ay, A.Aw, A.Ah, 12)
+    ctx.fill()
+    ctx.save()
+    ctx.shadowColor = '#fb923c'
+    ctx.shadowBlur = 22
+    ctx.strokeStyle = 'rgba(251,146,60,0.85)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.roundRect(A.Ax, A.Ay, A.Aw, A.Ah, 12)
+    ctx.stroke()
+    ctx.restore()
+    ctx.strokeStyle = 'rgba(255,255,255,0.16)'
+    ctx.lineWidth = 1
+    ctx.beginPath()
+    ctx.roundRect(A.Ax + 6, A.Ay + 6, A.Aw - 12, A.Ah - 12, 9)
+    ctx.stroke()
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.font = '600 13px "Segoe UI", system-ui, sans-serif'
+    ctx.fillStyle = 'rgba(251,146,60,0.85)'
+    ctx.fillText('PERCUTE-LE ×3', A.Ax + A.Aw / 2, A.Ay + A.Ah + 24)
+    ctx.restore()
+    for (let i = 0; i < A.hp; i++) {
+      const x = A.Ax + A.Aw / 2 + (i - (A.hp - 1) / 2) * 20
+      const y = A.Ay + 16
+      ctx.save()
+      ctx.translate(x, y)
+      ctx.rotate(Math.PI / 4)
+      ctx.fillStyle = '#fb923c'
+      ctx.shadowColor = '#fb923c'
+      ctx.shadowBlur = 8
+      ctx.fillRect(-4, -4, 8, 8)
+      ctx.restore()
+    }
+    const grad = ctx.createRadialGradient(
+      A.bx - A.br * 0.3,
+      A.by - A.br * 0.3,
+      1,
+      A.bx,
+      A.by,
+      A.br,
+    )
+    grad.addColorStop(0, '#ffffff')
+    grad.addColorStop(0.4, '#fdba74')
+    grad.addColorStop(1, '#9a3412')
+    ctx.save()
+    ctx.shadowColor = '#fb923c'
+    ctx.shadowBlur = 26
+    ctx.fillStyle = grad
+    ctx.beginPath()
+    ctx.arc(A.bx, A.by, A.br, 0, Math.PI * 2)
+    ctx.fill()
+    if (A.flash >= 0 && g.clock - A.flash < 0.18) {
+      ctx.fillStyle = 'rgba(255,255,255,0.75)'
+      ctx.beginPath()
+      ctx.arc(A.bx, A.by, A.br * 0.95, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.fillStyle = '#431407'
+    ctx.beginPath()
+    ctx.arc(A.bx, A.by, A.br * 0.3, 0, Math.PI * 2)
+    ctx.fill()
+    ctx.restore()
   }
 
   private particles(g: Game): void {

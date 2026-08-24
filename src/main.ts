@@ -529,9 +529,10 @@ function frame(now: number): void {
 
   hudTime.textContent = fmtTime(game.totalTime)
   const mt = game.modifierTag()
+  const tags = [mt, game.inArena ? 'GARDIEN' : ''].filter(Boolean).join(' · ')
   hudLevel.textContent =
     `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}` +
-    (mt ? ` · ⟬${mt}⟭` : '')
+    (tags ? ` · ⟬${tags}⟭` : '')
   shownScore += (game.totalScore + game.levelPoints - shownScore) * Math.min(1, dt * 7)
   if (Math.abs(game.totalScore + game.levelPoints - shownScore) < 1) {
     shownScore = game.totalScore + game.levelPoints

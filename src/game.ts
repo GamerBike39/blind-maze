@@ -169,9 +169,35 @@ export const SONAR_DUR = 0.9
 export const SONAR_RANGE_CELLS = 7
 const SONAR_GRAZE_NEED = 5
 const SONAR_MAX = 3
-const DRIFT_ACC = 545
+const ZONE_NOIR_K = 900
 
-export type Modifier = 'courant' | 'rush' | 'silence'
+export type Modifier = 'rush' | 'silence'
+
+export interface Zone {
+  kind: 'courant' | 'noir'
+  x: number
+  y: number
+  w: number
+  h: number
+  dx: number
+  dy: number
+  cx: number
+  cy: number
+}
+
+export interface Arena {
+  hp: number
+  bx: number
+  by: number
+  bvx: number
+  bvy: number
+  br: number
+  flash: number
+  Ax: number
+  Ay: number
+  Aw: number
+  Ah: number
+}
 
 export function fmtTime(t: number): string {
   const mm = Math.floor(t / 60)
@@ -202,6 +228,10 @@ export class Game {
   messageTitle = 'LABYRINTHE AVEUGLE'
   messageSub =
     'Stick gauche : rouler · Stick droit : palper les murs\nRB / G : éclair · Start : pause · F : plein écran'
+  zones: Zone[] = []
+  portalCell: [number, number] | null = null
+  portalConsumed = false
+  arena: Arena | null = null
 
   todayLabel(): string {
     const [y, m, d] = this.todayKey().split('-')
@@ -219,13 +249,14 @@ export class Game {
   grenades = 0
   flashAt = -10
   modifier: Modifier | null = null
-  driftX = 0
-  driftY = 0
   sonarCharges = 1
   sonarFill = 0
   private grazeAt = new Map<number, number>()
   private sonarT0 = -1
   private sonarPrevR = 0
+  private bossHitAt = -1
+  private bossTurnAt = 0
+  private savedPos = { x: BOARD / 2, y: BOARD / 2 }
   previewT = 0
   previewDur = 2
 
@@ -301,6 +332,8 @@ export class Game {
     this.previewDur = Math.min(3, Math.max(1.8, mz.path.length * 0.045))
     this.drainDur = Math.min(3, Math.max(1.2, this.previewDur * 0.75))
     this.rollModifier(n)
+    this.rollZones(n)
+    this.rollPortal(n)
     this.previewPts = mz.path.map((c) => this.cellCenter(c))
     this.visited.clear()
     const [sx, sy] = mz.start
@@ -326,20 +359,87 @@ export class Game {
 
   private rollModifier(n: number): void {
     this.modifier = null
-    this.driftX = 0
-    this.driftY = 0
     if (n < 1) return
     const rnd = this.mode.daily
       ? rngFromSeed(hashSeed(`${this.todayKey()}|mod|${n}`))
       : Math.random
     if (rnd() >= 0.65) return
-    const pick = ['courant', 'rush', 'silence'][Math.floor(rnd() * 3)] as Modifier
-    this.modifier = pick
-    if (pick === 'courant') {
-      const a = rnd() * Math.PI * 2
-      const mag = DRIFT_ACC * (0.8 + rnd() * 0.4)
-      this.driftX = Math.cos(a) * mag
-      this.driftY = Math.sin(a) * mag
+    this.modifier = (['rush', 'silence'] as const)[Math.floor(rnd() * 2)]
+  }
+
+  private rollZones(n: number): void {
+    this.zones = []
+    if (n < 1) return
+    const rnd = this.mode.daily
+      ? rngFromSeed(hashSeed(`${this.todayKey()}|zones|${n}`))
+      : Math.random
+    if (rnd() >= 0.6) return
+    const count = rnd() < 0.4 ? 2 : 1
+    const size = Math.min(8 + n * 2, 22)
+    const m = this.maze
+    for (let i = 0; i < count; i++) {
+      const cw = 3 + Math.floor(rnd() * 3)
+      const ch = 3 + Math.floor(rnd() * 2)
+      const ccx = 1 + Math.floor(rnd() * (size - cw - 2))
+      const ccy = 1 + Math.floor(rnd() * (size - ch - 2))
+      if (
+        Math.abs(ccx - m.start[0]) <= 2 ||
+        Math.abs(ccx - m.exit[0]) <= 2 ||
+        Math.abs(ccy - m.start[1]) <= 2 ||
+        Math.abs(ccy - m.exit[1]) <= 2
+      ) {
+        continue
+      }
+      const kind: 'courant' | 'noir' = rnd() < 0.5 ? 'courant' : 'noir'
+      let dx = 0
+      let dy = 0
+      if (kind === 'courant') {
+        const a = Math.floor(rnd() * 4)
+        const mag = 430 + rnd() * 190
+        dx = [1, 0, -1, 0][a] * mag
+        dy = [0, 1, 0, -1][a] * mag
+      }
+      this.zones.push({
+        kind,
+        x: m.ox + ccx * m.cell + m.cell * 0.15,
+        y: m.oy + ccy * m.cell + m.cell * 0.15,
+        w: cw * m.cell - m.cell * 0.3,
+        h: ch * m.cell - m.cell * 0.3,
+        dx,
+        dy,
+        cx: m.ox + (ccx + cw / 2) * m.cell,
+        cy: m.oy + (ccy + ch / 2) * m.cell,
+      })
+    }
+  }
+
+  private rollPortal(n: number): void {
+    this.portalCell = null
+    this.portalConsumed = false
+    if (n < 1) return
+    const rnd = this.mode.daily
+      ? rngFromSeed(hashSeed(`${this.todayKey()}|portal|${n}`))
+      : Math.random
+    const size = Math.min(8 + n * 2, 22)
+    for (let tries = 0; tries < 80; tries++) {
+      const cx = 1 + Math.floor(rnd() * (size - 2))
+      const cy = 1 + Math.floor(rnd() * (size - 2))
+      if (
+        Math.abs(cx - this.maze.start[0]) <= 1 ||
+        Math.abs(cy - this.maze.start[1]) <= 1 ||
+        Math.abs(cx - this.maze.exit[0]) <= 1 ||
+        Math.abs(cy - this.maze.exit[1]) <= 1
+      ) {
+        continue
+      }
+      const px = this.maze.ox + (cx + 0.5) * this.maze.cell
+      const py = this.maze.oy + (cy + 0.5) * this.maze.cell
+      const inZone = this.zones.some(
+        (z) => px > z.x - this.maze.cell && px < z.x + z.w + this.maze.cell && py > z.y - this.maze.cell && py < z.y + z.h + this.maze.cell,
+      )
+      if (inZone) continue
+      this.portalCell = [cx, cy]
+      return
     }
   }
 
@@ -348,17 +448,7 @@ export class Game {
   }
 
   modifierTag(): string {
-    if (this.modifier === null) return ''
-    if (this.modifier !== 'courant') return this.modifierLabel()
-    const arrow =
-      Math.abs(this.driftX) > Math.abs(this.driftY)
-        ? this.driftX > 0
-          ? '→'
-          : '←'
-        : this.driftY > 0
-          ? '↓'
-          : '↑'
-    return `COURANT ${arrow}`
+    return this.modifierLabel()
   }
 
   private stallNow(): number {
@@ -383,6 +473,10 @@ export class Game {
 
   get mode(): Mode {
     return MODES[this.modeIndex]
+  }
+
+  get inArena(): boolean {
+    return this.arena !== null
   }
 
   get revealLife(): number {
@@ -468,10 +562,15 @@ export class Game {
           this.mult = 1
         }
       }
-      this.physics(dt)
-      if (this.input.flashEdge()) this.useFlash()
-      if (this.input.sonarEdge()) this.fireSonar()
-      if (this.sonarT0 >= 0) {
+      if (this.arena) {
+        this.arenaStep(dt)
+      } else {
+        this.physics(dt)
+        if (this.input.flashEdge()) this.useFlash()
+        if (this.input.sonarEdge()) this.fireSonar()
+        this.portalCheck()
+      }
+      if (this.sonarT0 >= 0 && !this.arena) {
         const t = this.clock - this.sonarT0
         if (t > SONAR_DUR) this.sonarT0 = -1
         else {
@@ -486,7 +585,7 @@ export class Game {
         0,
         1 - Math.hypot(this.ball.x - ex, this.ball.y - ey) / (this.maze.cell * 2.6),
       )
-      if (this.atExit()) this.complete()
+      if (!this.arena && this.atExit()) this.complete()
     }
     for (const [id, rev] of this.reveals) {
       if (rev.w !== undefined && rev.w > 0) rev.w = Math.max(0, rev.w - dt * 2.2)
@@ -557,22 +656,20 @@ export class Game {
   private announceModifier(): void {
     const l = this.modifierLabel()
     if (!l) return
-    let arrow = ''
-    if (this.modifier === 'courant') {
-      arrow =
-        Math.abs(this.driftX) > Math.abs(this.driftY)
-          ? this.driftX > 0
-            ? ' →'
-            : ' ←'
-          : this.driftY > 0
-            ? ' ↓'
-            : ' ↑'
+    this.popup(this.ball.x, this.ball.y - this.ball.r - 34, l, '#fcd34d', 1.35)
+    if (this.zones.length > 0) {
+      this.popup(
+        this.ball.x,
+        this.ball.y - this.ball.r - 58,
+        `${this.zones.length} ZONE${this.zones.length > 1 ? 'S' : ''} D'ANOMALIE`,
+        '#c4b5fd',
+        1.05,
+      )
     }
-    this.popup(this.ball.x, this.ball.y - this.ball.r - 34, `${l}${arrow}`, '#fcd34d', 1.35)
   }
 
   fireSonar(): void {
-    if (this.phase !== 'playing') return
+    if (this.phase !== 'playing' || this.arena) return
     if (this.sonarCharges <= 0) {
       this.popup(this.ball.x, this.ball.y - this.ball.r - 8, 'SONAR DÉCHARGÉ', '#94a3b8')
       return
@@ -599,12 +696,196 @@ export class Game {
     }
   }
 
+  private portalCheck(): void {
+    if (this.portalCell === null || this.portalConsumed) return
+    const [cx, cy] = this.portalCell
+    const px = this.maze.ox + (cx + 0.5) * this.maze.cell
+    const py = this.maze.oy + (cy + 0.5) * this.maze.cell
+    if (Math.hypot(this.ball.x - px, this.ball.y - py) < this.maze.cell * 0.33) {
+      this.enterArena()
+    }
+  }
+
+  private enterArena(): void {
+    const cell = this.maze.cell
+    const Aw = cell * 7
+    const Ah = cell * 4.2
+    const Ax = (BOARD - Aw) / 2
+    const Ay = (BOARD - Ah) / 2
+    this.arena = {
+      hp: 3,
+      bx: BOARD / 2,
+      by: Ay + cell * 0.9,
+      bvx: cell * 2.3,
+      bvy: cell * 1.6,
+      br: cell * 0.42,
+      flash: -1,
+      Ax,
+      Ay,
+      Aw,
+      Ah,
+    }
+    this.savedPos = { x: this.ball.x, y: this.ball.y }
+    this.ball.x = BOARD / 2
+    this.ball.y = Ay + Ah - this.ball.r - 10
+    this.ball.vx = 0
+    this.ball.vy = 0
+    this.trailEpoch++
+    this.trailX = this.ball.x
+    this.trailY = this.ball.y
+    this.popup(BOARD / 2, Ay - 26, 'LE GARDIEN S\u2019ÉVEILLE', '#fb923c', 1.3)
+    this.audio.ping()
+    this.input.rumble(0.6, 0.2, 160)
+    this.shake = Math.min(1, this.shake + 0.35)
+  }
+
+  private arenaStep(dt: number): void {
+    const A = this.arena!
+    const b = this.ball
+    const dm = this.input.directMove()
+    if (dm) {
+      const k = Math.min(1, dt * 24)
+      b.vx = ((dm.x - b.x) * k) / dt
+      b.vy = ((dm.y - b.y) * k) / dt
+    } else {
+      const st = this.input.leftStick()
+      b.vx += st.x * 3650 * dt
+      b.vy += st.y * 3650 * dt
+      const damp = Math.exp(-3.05 * dt)
+      b.vx *= damp
+      b.vy *= damp
+    }
+    const maxSp = this.maze.cell * 5.5
+    let sp = Math.hypot(b.vx, b.vy)
+    if (sp > maxSp) {
+      b.vx *= maxSp / sp
+      b.vy *= maxSp / sp
+      sp = maxSp
+    }
+    const steps = Math.min(4, Math.max(1, Math.ceil((sp * dt) / (A.br * 0.7))))
+    const sdt = dt / steps
+    for (let i = 0; i < steps; i++) {
+      b.x += b.vx * sdt
+      b.y += b.vy * sdt
+      this.boundsBounce(b, b.r, 0.45)
+    }
+    A.bx += A.bvx * dt
+    A.by += A.bvy * dt
+    const wob = Math.sin(this.clock * 1.7)
+    if (this.clock > this.bossTurnAt) {
+      this.bossTurnAt = this.clock + 0.7 + Math.random() * 0.6
+      const a = Math.atan2(A.bvy, A.bvx) + wob * 0.55
+      const bs = Math.hypot(A.bvx, A.bvy)
+      A.bvx = Math.cos(a) * bs
+      A.bvy = Math.sin(a) * bs
+    }
+    const boss = { x: A.bx, y: A.by, vx: A.bvx, vy: A.bvy }
+    this.boundsBounce(boss, A.br, 1)
+    A.bx = boss.x
+    A.by = boss.y
+    A.bvx = boss.vx
+    A.bvy = boss.vy
+
+    const dx = b.x - A.bx
+    const dy = b.y - A.by
+    const d = Math.hypot(dx, dy) || 1
+    const rr = b.r + A.br
+    if (d < rr && this.clock - this.bossHitAt > 0.35) {
+      const nx = dx / d
+      const ny = dy / d
+      const toward = -(b.vx * nx + b.vy * ny)
+      if (sp > this.maze.cell * 0.95 && toward > this.maze.cell * 0.25) {
+        this.bossHitAt = this.clock
+        A.flash = this.clock
+        A.hp--
+        const boost = 1.28
+        const bs = Math.hypot(A.bvx, A.bvy) * boost
+        A.bvx = -nx * bs
+        A.bvy = -ny * bs
+        b.vx = nx * this.maze.cell * 2.9
+        b.vy = ny * this.maze.cell * 2.9
+        if (A.hp > 0) {
+          this.popup(A.bx, A.by - A.br - 10, 'TOUCHÉ !', '#fb923c', 1.3)
+        }
+        this.audio.impact(0.85)
+        this.audio.ping()
+        this.input.rumble(0.9, 0.4, 150)
+        this.shake = Math.min(1, this.shake + 0.5)
+        this.spawnBurst(A.bx, A.by, -nx, -ny, 0.9)
+        if (A.hp <= 0) {
+          this.winArena()
+          return
+        }
+      } else {
+        b.x = A.bx + nx * rr
+        b.y = A.by + ny * rr
+        const vn = b.vx * nx + b.vy * ny
+        if (vn < 0) {
+          b.vx -= 1.5 * vn * nx
+          b.vy -= 1.5 * vn * ny
+        }
+      }
+    }
+    this.speedNorm = Math.min(1, Math.hypot(b.vx, b.vy) / (this.maze.cell * 5.2))
+  }
+
+  private boundsBounce(o: { x: number; y: number; vx: number; vy: number }, r: number, e: number): void {
+    const A = this.arena!
+    if (o.x < A.Ax + r) {
+      o.x = A.Ax + r
+      o.vx = Math.abs(o.vx) * e
+    }
+    if (o.x > A.Ax + A.Aw - r) {
+      o.x = A.Ax + A.Aw - r
+      o.vx = -Math.abs(o.vx) * e
+    }
+    if (o.y < A.Ay + r) {
+      o.y = A.Ay + r
+      o.vy = Math.abs(o.vy) * e
+    }
+    if (o.y > A.Ay + A.Ah - r) {
+      o.y = A.Ay + A.Ah - r
+      o.vy = -Math.abs(o.vy) * e
+    }
+  }
+
+  private winArena(): void {
+    const A = this.arena!
+    for (let id = 0; id < this.maze.walls.length; id++) {
+      if (Math.random() < 0.3) this.softReveal(id, 0.85, 'probe')
+    }
+    this.grenades = Math.min(9, this.grenades + 1)
+    const pts = Math.round(250 * this.mode.mult)
+    this.levelPoints += pts
+    this.chain += COMBO_STEP * 2
+    this.mult = Math.min(MULT_MAX, 1 + Math.floor(this.chain / COMBO_STEP))
+    this.popup(BOARD / 2, A.Ay + A.Ah / 2, `GARDIEN VAINCU · +${pts} PTS`, '#fcd34d', 1.5)
+    this.popup(BOARD / 2, A.Ay + A.Ah / 2 + 30, '+⚡ 1', '#67e8f9')
+    this.audio.win(2)
+    this.input.rumble(1, 0.8, 260)
+    this.shake = 1
+    this.spawnBurst(A.bx, A.by, 0, -1, 1)
+    this.portalConsumed = true
+    this.exitArena()
+  }
+
+  private exitArena(): void {
+    this.ball.x = this.savedPos.x
+    this.ball.y = this.savedPos.y
+    this.ball.vx = 0
+    this.ball.vy = 0
+    this.trailX = this.ball.x
+    this.trailY = this.ball.y
+    this.arena = null
+    this.trailEpoch++
+  }
+
   get previewWaiting(): boolean {
     return this.phase === 'preview' && this.previewT >= this.previewDur
   }
 
   private useFlash(): void {
-    if (this.phase !== 'playing') return
+    if (this.phase !== 'playing' || this.arena) return
     const b = this.ball
     if (this.grenades > 0) {
       this.grenades--
@@ -689,6 +970,7 @@ export class Game {
 
   resetLevel(): void {
     if (this.phase !== 'playing' && this.phase !== 'preview' && this.phase !== 'paused') return
+    if (this.arena) this.exitArena()
     this.resumePhase = null
     this.reveals.clear()
     this.trailEpoch++
@@ -774,6 +1056,8 @@ export class Game {
     this.impactAt.clear()
     this.lastImpactAny = -1
     this.grazeAt.clear()
+    this.portalConsumed = false
+    this.grazeAt.clear()
     this.chain = 0
     this.mult = 1
     this.comboT = 0
@@ -842,6 +1126,23 @@ export class Game {
   private physics(dt: number): void {
     const b = this.ball
     const dm = this.input.directMove()
+    let zx = 0
+    let zy = 0
+    for (const z of this.zones) {
+      if (b.x < z.x || b.x > z.x + z.w || b.y < z.y || b.y > z.y + z.h) continue
+      if (z.kind === 'courant') {
+        zx += z.dx
+        zy += z.dy
+      } else {
+        const dx = z.cx - b.x
+        const dy = z.cy - b.y
+        const d = Math.hypot(dx, dy) || 1
+        const rz = Math.min(z.w, z.h) / 2
+        const f = ZONE_NOIR_K * (0.35 + 0.65 * (1 - Math.min(1, d / rz)))
+        zx += (dx / d) * f
+        zy += (dy / d) * f
+      }
+    }
     if (dm) {
       const k = Math.min(1, dt * 24)
       b.vx = ((dm.x - b.x) * k) / dt
@@ -849,12 +1150,12 @@ export class Game {
       const fd = Math.exp(-0.6 * dt)
       b.vx *= fd
       b.vy *= fd
-      b.vx += this.driftX * dt
-      b.vy += this.driftY * dt
+      b.vx += zx * dt
+      b.vy += zy * dt
     } else {
       const st = this.input.leftStick()
-      b.vx += st.x * 3650 * dt + this.driftX * dt
-      b.vy += st.y * 3650 * dt + this.driftY * dt
+      b.vx += st.x * 3650 * dt + zx * dt
+      b.vy += st.y * 3650 * dt + zy * dt
       const damp = Math.exp(-3.05 * dt)
       b.vx *= damp
       b.vy *= damp
