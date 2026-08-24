@@ -38,8 +38,13 @@ export interface LevelResult {
   points: number
 }
 
-export interface LevelSummary {
+export interface RunEntry {
+  score: number
   time: number
+  date: string
+}
+
+export interface LevelSummary {  time: number
   pathPts: number
   timePts: number
   cartoPts: number
@@ -450,6 +455,28 @@ export class Game {
     return this.runFlashSpent
   }
 
+  topRuns(modeId: string): RunEntry[] {
+    try {
+      return JSON.parse(localStorage.getItem(`labyrinthe-top-${modeId}`) ?? '[]') as RunEntry[]
+    } catch {
+      return []
+    }
+  }
+
+  private saveTopRun(entry: RunEntry): number | null {
+    try {
+      const list = this.topRuns(this.mode.id)
+      list.push(entry)
+      list.sort((a, b) => b.score - a.score)
+      const top = list.slice(0, 5)
+      localStorage.setItem(`labyrinthe-top-${this.mode.id}`, JSON.stringify(top))
+      const idx = top.indexOf(entry)
+      return idx >= 0 ? idx + 1 : null
+    } catch {
+      return null
+    }
+  }
+
   private resumePhase: Phase | null = null
 
   requestPause(): void {
@@ -563,6 +590,16 @@ export class Game {
     else {
       const rec = this.recordRun(this.mode.id)
       if (rec !== null) sub += `\nRecord : ${rec.toLocaleString('fr-FR')} pts`
+    }
+    const pos = this.saveTopRun({
+      score: this.totalScore,
+      time: this.totalTime,
+      date: new Date().toISOString(),
+    })
+    if (pos !== null && pos <= 3) sub += `\n★ TOP ${pos} LOCAL !`
+    const tops = this.topRuns(this.mode.id)
+    if (tops.length > 0) {
+      sub += `\nMeilleurs runs : ${tops.map((t) => t.score.toLocaleString('fr-FR')).join(' · ')}`
     }
     this.messageTitle = 'RUN TERMINÉ !'
     this.messageSub = sub

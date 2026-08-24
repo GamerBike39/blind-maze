@@ -31,13 +31,79 @@ const modeRows = MODES.map((m) => {
   return row
 })
 
-function statsHTML(items: [string, string, string?][]): string {
+const ICONS: Record<string, string> = {
+  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  gauge: '<path d="M5 15a7 7 0 0 1 14 0"/><path d="M12 15l4-5"/><circle cx="12" cy="15" r="1.6"/>',
+  flame:
+    '<path d="M12 3c1.2 2.8 4.5 4.2 4.5 8a4.5 4.5 0 0 1-9 0c0-1.8.8-3 1.8-4.6.4 1.4 1.2 2 2.2 2.6C11.2 7.6 11.6 5.4 12 3z"/>',
+  route:
+    '<path d="M4 20l6-6 4 4 6-10" stroke-dasharray="3 3"/><circle cx="4" cy="20" r="1.6"/><circle cx="20" cy="8" r="1.6"/>',
+  wall:
+    '<rect x="3" y="5" width="18" height="14" rx="1"/><path d="M3 10h18M3 14h18M9 5v5M15 10v4M6 14v5M18 14v5"/>',
+  radar: '<path d="M12 13v6"/><path d="M8.8 9.8a4.5 4.5 0 0 1 6.4 0"/><path d="M6 7a8.5 8.5 0 0 1 12 0"/>',
+  zap: '<path d="M13 2L5 13h5l-1.5 9L17 11h-5l1-9z"/>',
+  star:
+    '<path d="M12 3l2.7 5.8 6.3.7-4.7 4.3 1.3 6.2-5.6-3.2-5.6 3.2 1.3-6.2L3 9.5l6.3-.7z"/>',
+  trophy:
+    '<path d="M7 4h10v6a5 5 0 0 1-10 0z"/><path d="M7 5H4a3 3 0 0 0 3 4M17 5h3a3 3 0 0 1-3 4M12 15v4M8 19h8"/>',
+  coins:
+    '<rect x="3" y="7" width="18" height="12" rx="2"/><circle cx="12" cy="13" r="3"/><path d="M7 7V5h10v2"/>',
+}
+
+function icon(name?: string): string {
+  if (!name) return ''
+  return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name]}</svg>`
+}
+
+interface StatItem {
+  label: string
+  value: string
+  icon?: string
+  cls?: string
+  anim?: number
+  dec?: number
+  pre?: string
+  suf?: string
+}
+
+function statsHTML(items: StatItem[]): string {
   return items
-    .map(
-      ([label, value, cls]) =>
-        `<div class="stat${cls ? ` ${cls}` : ''}"><b>${value}</b><span>${label}</span></div>`,
-    )
+    .map((it) => {
+      const inner =
+        it.anim !== undefined
+          ? `${it.pre ?? ''}0${it.suf ?? ''}`
+          : it.value
+      const data =
+        it.anim !== undefined
+          ? ` data-anim="${it.anim}" data-dec="${it.dec ?? 0}" data-pre="${it.pre ?? ''}" data-suf="${it.suf ?? ''}"`
+          : ''
+      return `<div class="stat${it.cls ? ` ${it.cls}` : ''}">${icon(it.icon)}<b${data}>${inner}</b><span>${it.label}</span></div>`
+    })
     .join('')
+}
+
+function animateStats(grid: HTMLElement): void {
+  const els = Array.from(grid.querySelectorAll<HTMLElement>('b[data-anim]'))
+  if (els.length === 0) return
+  const t0 = performance.now()
+  const DUR = 750
+  const tick = (now: number): void => {
+    const t = Math.min(1, (now - t0) / DUR)
+    const e = 1 - Math.pow(1 - t, 3)
+    for (const el of els) {
+      const v = Number(el.dataset.anim)
+      const dec = Number(el.dataset.dec ?? 0)
+      el.textContent =
+        (el.dataset.pre ?? '') +
+        (v * e).toLocaleString('fr-FR', {
+          minimumFractionDigits: dec,
+          maximumFractionDigits: dec,
+        }) +
+        (el.dataset.suf ?? '')
+    }
+    if (t < 1) requestAnimationFrame(tick)
+  }
+  requestAnimationFrame(tick)
 }
 
 let ovPhase: Phase | null = null
@@ -90,20 +156,45 @@ function syncOverlay(): void {
       `Parcours +${s.pathPts.toLocaleString('fr-FR')} · Temps ${s.timePts >= 0 ? '+' : ''}${s.timePts} · Carto +${s.cartoPts} · Impacts -${s.impactPen}` +
       `\n+${s.points.toLocaleString('fr-FR')} pts (multiplicateur ×${game.mode.mult} inclus)`
     statsGrid.innerHTML = statsHTML([
-      ['Temps', fmtTime(s.time)],
-      ['Vitesse max', `${s.maxSpeedU.toFixed(1)} u/s`, 'violet'],
-      ['Combo max', `${s.maxChain} cases`, 'violet'],
-      ['Distance', `${s.distCells} cases`],
-      [
-        'Murs touchés',
-        `${s.impacts}${s.impactsKnown > 0 ? ` (${s.impactsKnown})` : ''}`,
-        s.impacts > 0 ? 'rose' : '',
-      ],
-      ['Murs palpés', `${s.probed}`, 'violet'],
-      ['Éclairs', `${s.flashes}`],
-      ['Points', `+${s.points.toLocaleString('fr-FR')}`, 'gold'],
+      { label: 'Temps', value: fmtTime(s.time), icon: 'clock' },
+      {
+        label: 'Vitesse max',
+        value: `${s.maxSpeedU.toFixed(1)} u/s`,
+        icon: 'gauge',
+        cls: 'violet',
+        anim: s.maxSpeedU,
+        dec: 1,
+        suf: ' u/s',
+      },
+      {
+        label: 'Combo max',
+        value: `${s.maxChain} cases`,
+        icon: 'flame',
+        cls: 'violet',
+        anim: s.maxChain,
+        suf: ' cases',
+      },
+      { label: 'Distance', value: `${s.distCells} cases`, icon: 'route', anim: s.distCells, suf: ' cases' },
+      {
+        label: 'Murs touchés',
+        value: `${s.impacts}${s.impactsKnown > 0 ? ` (${s.impactsKnown})` : ''}`,
+        icon: 'wall',
+        cls: s.impacts > 0 ? 'rose' : '',
+        anim: s.impacts,
+      },
+      { label: 'Murs palpés', value: `${s.probed}`, icon: 'radar', cls: 'violet', anim: s.probed },
+      { label: 'Éclairs', value: `${s.flashes}`, icon: 'zap', anim: s.flashes },
+      {
+        label: 'Points',
+        value: `+${s.points.toLocaleString('fr-FR')}`,
+        icon: 'star',
+        cls: 'gold',
+        anim: s.points,
+        pre: '+',
+      },
     ])
     statsGrid.classList.remove('hidden')
+    animateStats(statsGrid)
     ovHint.textContent = 'Ⓐ continuer'
   } else if (p === 'recap') {
     ovKicker.textContent = `RUN ${game.mode.name} ×${game.mode.mult}`
@@ -114,18 +205,35 @@ function syncOverlay(): void {
     const sumProbed = game.runResults.reduce((a, r) => a + r.probed, 0)
     const sumFlashes = game.runResults.reduce((a, r) => a + r.flashes, 0)
     statsGrid.innerHTML = statsHTML([
-      ['Score total', game.totalScore.toLocaleString('fr-FR'), 'gold'],
-      ['Temps total', fmtTime(game.totalTime)],
-      ['Impacts', `${sumImpacts}`, sumImpacts > 0 ? 'rose' : ''],
-      ['Murs palpés', `${sumProbed}`, 'violet'],
-      ['Éclairs', `${sumFlashes}`],
-      [
-        'Éclairs payés',
-        game.runFlashSpentPts > 0 ? `-${game.runFlashSpentPts.toLocaleString('fr-FR')}` : '0',
-        game.runFlashSpentPts > 0 ? 'rose' : '',
-      ],
+      {
+        label: 'Score total',
+        value: game.totalScore.toLocaleString('fr-FR'),
+        icon: 'trophy',
+        cls: 'gold',
+        anim: game.totalScore,
+      },
+      { label: 'Temps total', value: fmtTime(game.totalTime), icon: 'clock' },
+      {
+        label: 'Impacts',
+        value: `${sumImpacts}`,
+        icon: 'wall',
+        cls: sumImpacts > 0 ? 'rose' : '',
+        anim: sumImpacts,
+      },
+      { label: 'Murs palpés', value: `${sumProbed}`, icon: 'radar', cls: 'violet', anim: sumProbed },
+      { label: 'Éclairs', value: `${sumFlashes}`, icon: 'zap', anim: sumFlashes },
+      {
+        label: 'Éclairs payés',
+        value:
+          game.runFlashSpentPts > 0 ? `-${game.runFlashSpentPts.toLocaleString('fr-FR')}` : '0',
+        icon: 'coins',
+        cls: game.runFlashSpentPts > 0 ? 'rose' : '',
+        anim: game.runFlashSpentPts,
+        pre: '-',
+      },
     ])
     statsGrid.classList.remove('hidden')
+    animateStats(statsGrid)
     ovHint.textContent = 'Ⓐ nouveau run'
   }
 }

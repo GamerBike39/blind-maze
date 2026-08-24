@@ -283,6 +283,14 @@ body {
   border: 1px solid rgba(148, 163, 184, 0.14);
   border-radius: 8px;
   padding: 10px 4px 8px;
+  color: #67e8f9;
+}
+
+.stat svg {
+  width: clamp(15px, 2.3vmin, 19px);
+  height: clamp(15px, 2.3vmin, 19px);
+  margin-bottom: 5px;
+  opacity: 0.9;
 }
 
 .stat b {
@@ -303,19 +311,34 @@ body {
   text-transform: uppercase;
 }
 
-.stat.gold b {
+.stat.gold {
   color: #fcd34d;
+}
+
+.stat.violet {
+  color: #c4b5fd;
+}
+
+.stat.rose {
+  color: #fda4af;
+}
+
+.stat.gold b {
   text-shadow: 0 0 14px rgba(252, 211, 77, 0.55);
 }
 
 .stat.violet b {
-  color: #c4b5fd;
   text-shadow: 0 0 12px rgba(196, 181, 253, 0.5);
 }
 
 .stat.rose b {
-  color: #fda4af;
   text-shadow: 0 0 12px rgba(253, 164, 175, 0.5);
+}
+
+@media (max-width: 520px) {
+  #stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
 }
 
 #overlay .hint {
