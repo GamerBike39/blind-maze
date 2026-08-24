@@ -548,6 +548,11 @@ export class Game {
     if (this.phase === 'playing' || this.phase === 'preview') this.enterPause()
   }
 
+  togglePause(): void {
+    if (this.phase === 'paused') this.exitPause()
+    else this.requestPause()
+  }
+
   private enterPause(): void {
     this.resumePhase = this.phase
     this.messageTitle = 'PAUSE'

@@ -28,9 +28,50 @@ const modeRows = MODES.map((m) => {
   mult.textContent = `×${m.mult}`
   row.appendChild(name)
   row.appendChild(mult)
+  row.addEventListener('click', () => {
+    game.modeIndex = MODES.indexOf(m)
+  })
   modeList.appendChild(row)
   return row
 })
+
+const btnPause = document.getElementById('btn-pause')!
+btnPause.addEventListener('click', () => game.togglePause())
+
+const sticksLayer = document.getElementById('sticks')!
+const stickEls: Record<string, { base: HTMLDivElement; knob: HTMLDivElement } | null> = {
+  move: null,
+  probe: null,
+}
+
+function showStick(key: 'move' | 'probe', v: { ax: number; ay: number; kx: number; ky: number } | null): void {
+  let s = stickEls[key]
+  if (!v) {
+    if (s) {
+      s.base.style.display = 'none'
+      s.knob.style.display = 'none'
+    }
+    return
+  }
+  if (!s) {
+    const base = document.createElement('div')
+    base.className = 'stick-base'
+    const knob = document.createElement('div')
+    knob.className = `stick-knob${key === 'probe' ? ' probe' : ''}`
+    sticksLayer.append(base, knob)
+    s = stickEls[key] = { base, knob }
+  }
+  const dx = v.kx - v.ax
+  const dy = v.ky - v.ay
+  const d = Math.hypot(dx, dy)
+  const f = d > 60 ? 60 / d : 1
+  s.base.style.display = 'block'
+  s.base.style.left = `${v.ax}px`
+  s.base.style.top = `${v.ay}px`
+  s.knob.style.display = 'block'
+  s.knob.style.left = `${v.ax + dx * f}px`
+  s.knob.style.top = `${v.ay + dy * f}px`
+}
 
 const ICONS: Record<string, string> = {
   clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
@@ -119,9 +160,14 @@ function syncOverlay(): void {
 
   if (p === 'playing' || p === 'preview') {
     overlay.classList.add('hidden')
-    return
+  } else {
+    overlay.classList.remove('hidden')
   }
-  overlay.classList.remove('hidden')
+  btnPause.classList.toggle(
+    'on',
+    p === 'playing' || p === 'preview' || p === 'paused',
+  )
+  if (p === 'playing' || p === 'preview') return
   statsGrid.classList.add('hidden')
   modeList.classList.add('hidden')
 
@@ -140,9 +186,11 @@ function syncOverlay(): void {
           ? `×${MODES[i].mult} · ${game.recordRun(MODES[i].id)!.toLocaleString('fr-FR')} pts`
           : `×${MODES[i].mult}`
     })
-    ovHint.textContent =
-      (input.connected ? '' : 'Manette non détectée — clavier OK · ') +
-      '◀ ▶ mode · Ⓐ ou Entrée pour lancer'
+    ovHint.textContent = input.connected
+      ? '◀ ▶ mode · Ⓐ ou Entrée pour lancer'
+      : matchMedia('(pointer: coarse)').matches
+        ? '◀ ▶ modes (touche les lignes) · tape l\u2019écran pour lancer\nMoitié gauche : rouler · moitié droite : palper'
+        : 'Souris : la balle suit le curseur · clic droit : palper · ◀ ▶ mode · Ⓐ / Entrée lancer'
   } else if (p === 'paused') {
     ovKicker.textContent = ''
     overlayTitle.textContent = game.messageTitle
@@ -279,13 +327,13 @@ function frame(now: number): void {
   game.update(dt)
   renderer.draw(game, dt)
   const scale = stageRect.width / BOARD
-  bg.frame(
-    stageRect.left + game.ball.x * scale,
-    stageRect.top + game.ball.y * scale,
-    game.motion,
-    dt,
-    game.clock,
-  )
+  const bx = stageRect.left + game.ball.x * scale
+  const by = stageRect.top + game.ball.y * scale
+  bg.frame(bx, by, game.motion, dt, game.clock)
+  input.setPointerAnchor(bx, by)
+  const sv = input.uiSticks()
+  showStick('move', sv.move)
+  showStick('probe', sv.probe)
 
   hudTime.textContent = fmtTime(game.totalTime)
   hudLevel.textContent = `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}`

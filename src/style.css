@@ -20,6 +20,10 @@ body {
   font-family: "Segoe UI", system-ui, sans-serif;
   color: #e2e8f0;
   overflow: hidden;
+  touch-action: none;
+  overscroll-behavior: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 #bg {
@@ -368,4 +372,65 @@ body {
   left: 4px;
   font-size: 12px;
   color: #64748b;
+}
+
+#btn-pause {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  z-index: 4;
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(15, 23, 42, 0.6);
+  border: 1px solid rgba(103, 232, 249, 0.35);
+  color: #67e8f9;
+  font-size: 17px;
+  line-height: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+}
+
+#btn-pause.on {
+  display: flex;
+}
+
+#btn-pause:active {
+  transform: scale(0.93);
+}
+
+#sticks {
+  position: fixed;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.stick-base {
+  position: absolute;
+  width: 110px;
+  height: 110px;
+  margin: -55px 0 0 -55px;
+  border-radius: 50%;
+  border: 2px solid rgba(148, 163, 184, 0.35);
+  background: rgba(15, 23, 42, 0.25);
+  display: none;
+}
+
+.stick-knob {
+  position: absolute;
+  width: 46px;
+  height: 46px;
+  margin: -23px 0 0 -23px;
+  border-radius: 50%;
+  background: rgba(103, 232, 249, 0.26);
+  border: 2px solid rgba(103, 232, 249, 0.55);
+  display: none;
+}
+
+.stick-knob.probe {
+  background: rgba(240, 171, 252, 0.24);
+  border-color: rgba(240, 171, 252, 0.55);
 }
