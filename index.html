@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Labyrinthe Aveugle</title>
+  </head>
+  <body>
+    <div id="stage">
+      <div id="hud">
+        <span id="hud-level">NIVEAU 1/5 · 8×8</span>
+        <span id="hud-time">0:00.00</span>
+        <span id="hud-right">
+          <span id="hud-flash"></span>
+          <span id="hud-mult"></span>
+          <span id="hud-best">SCORE 0</span>
+        </span>
+      </div>
+      <canvas id="game" width="960" height="960"></canvas>
+      <div id="overlay">
+        <div class="panel">
+          <div class="kicker" id="ov-kicker"></div>
+          <h1 id="overlay-title">LABYRINTHE AVEUGLE</h1>
+          <div id="mode-list" class="hidden"></div>
+          <p id="overlay-sub"></p>
+          <div id="stats-grid" class="hidden"></div>
+          <p class="hint" id="ov-hint">Ⓐ ou Entrée pour commencer</p>
+        </div>
+      </div>
+        <div id="pad-status"></div>
+      </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
