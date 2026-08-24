@@ -63,6 +63,7 @@ export class Renderer {
     }
     this.dots(g)
     this.previewPath(g)
+    this.previewPrompt(g)
     const sinceFlash = g.clock - g.flashAt
     if (sinceFlash >= 0 && sinceFlash < 0.5) {
       const q = sinceFlash / 0.5
@@ -105,19 +106,25 @@ export class Renderer {
     const pts = g.previewPts
     const m = g.maze
     const segs = pts.length - 1
-    const f = Math.min(1, Math.max(0, st.u)) * segs
-    const idx = Math.min(segs - 1, Math.floor(f))
-    const fr = f - idx
-    const gx = pts[idx][0] + (pts[idx + 1][0] - pts[idx][0]) * fr
-    const gy = pts[idx][1] + (pts[idx + 1][1] - pts[idx][1]) * fr
+    const f0 = Math.max(0, Math.min(1, st.cut)) * segs
+    const f1 = Math.min(1, Math.max(0, st.u)) * segs
+    if (f1 - f0 < 0.02) return
+    const i0 = Math.floor(f0)
+    const i1 = Math.min(segs - 1, Math.floor(f1))
+    const fr0 = f0 - i0
+    const fr1 = f1 - i1
+    const sx = pts[i0][0] + (pts[i0 + 1][0] - pts[i0][0]) * fr0
+    const sy = pts[i0][1] + (pts[i0 + 1][1] - pts[i0][1]) * fr0
+    const gx = pts[i1][0] + (pts[i1 + 1][0] - pts[i1][0]) * fr1
+    const gy = pts[i1][1] + (pts[i1 + 1][1] - pts[i1][1]) * fr1
     const ctx = this.ctx
     ctx.save()
     ctx.globalAlpha = st.alpha
     ctx.lineCap = 'round'
     ctx.lineJoin = 'round'
     ctx.beginPath()
-    ctx.moveTo(pts[0][0], pts[0][1])
-    for (let i = 1; i <= idx; i++) ctx.lineTo(pts[i][0], pts[i][1])
+    ctx.moveTo(sx, sy)
+    for (let i = i0 + 1; i <= i1; i++) ctx.lineTo(pts[i][0], pts[i][1])
     ctx.lineTo(gx, gy)
     ctx.strokeStyle = 'rgba(255,255,255,0.30)'
     ctx.lineWidth = m.cell * 0.13
@@ -125,12 +132,30 @@ export class Renderer {
     ctx.strokeStyle = 'rgba(199,250,255,0.35)'
     ctx.lineWidth = m.cell * 0.05
     ctx.stroke()
-    ctx.shadowColor = '#ffffff'
-    ctx.shadowBlur = 20
-    ctx.fillStyle = `rgba(255,255,255,${(0.95 * st.alpha).toFixed(3)})`
-    ctx.beginPath()
-    ctx.arc(gx, gy, g.ball.r * 0.75, 0, Math.PI * 2)
-    ctx.fill()
+    if (g.phase === 'preview' && g.previewT < g.previewDur) {
+      ctx.shadowColor = '#ffffff'
+      ctx.shadowBlur = 20
+      ctx.fillStyle = `rgba(255,255,255,${(0.95 * st.alpha).toFixed(3)})`
+      ctx.beginPath()
+      ctx.arc(gx, gy, g.ball.r * 0.75, 0, Math.PI * 2)
+      ctx.fill()
+    }
+    ctx.restore()
+  }
+
+  private previewPrompt(g: Game): void {
+    if (!g.previewWaiting) return
+    const ctx = this.ctx
+    const b = g.ball
+    const p = 0.55 + 0.45 * Math.sin(g.clock * 4.5)
+    ctx.save()
+    ctx.textAlign = 'center'
+    ctx.textBaseline = 'bottom'
+    ctx.font = `700 ${Math.round(Math.max(16, g.maze.cell * 0.34))}px "Segoe UI", system-ui, sans-serif`
+    ctx.shadowColor = '#22d3ee'
+    ctx.shadowBlur = 14 * p
+    ctx.fillStyle = `rgba(165,243,252,${p.toFixed(3)})`
+    ctx.fillText('Ⓐ POUR PARTIR', b.x, b.y - b.r - 14)
     ctx.restore()
   }
 

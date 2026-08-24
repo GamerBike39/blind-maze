@@ -212,7 +212,8 @@ export class Game {
   private levelMaxChain = 0
   lastSummary: LevelSummary | null = null
   previewPts: [number, number][] = []
-  private previewEndedAt = -10
+  private drainT = -1
+  private drainDur = 1.5
   private speedNorm = 0
   private exitGlow = 0
 
@@ -242,6 +243,7 @@ export class Game {
     }
     this.previewPts = mz.path.map((c) => this.cellCenter(c))
     this.previewDur = Math.min(3, Math.max(1.8, mz.path.length * 0.045))
+    this.drainDur = Math.min(3, Math.max(1.2, this.previewDur * 0.75))
     this.visited.clear()
     const [sx, sy] = mz.start
     this.lastCellKey = sy * size + sx
@@ -321,16 +323,20 @@ export class Game {
       }
     } else if (this.phase === 'preview') {
       this.previewT += dt
-      if (this.previewT >= this.previewDur || this.input.startEdge()) this.endPreview()
+      if (this.input.startEdge()) {
+        this.drainT = 0
+        this.phase = 'playing'
+      }
     } else if (this.phase === 'transition') {
       this.transitionT -= dt
-      if (this.transitionT <= 0 || this.input.startEdge()) {
+      if (this.transitionT <= 0 && this.input.startEdge()) {
         if (this.level + 1 >= RUN_LENGTH) this.showRecap()
         else this.nextLevel()
       }
     } else if (this.phase === 'recap') {
       if (this.input.startEdge()) this.resetRun()
     } else {
+      if (this.drainT >= 0) this.drainT += dt
       this.totalTime += dt
       this.levelTime += dt
       if (this.chain > 0) {
@@ -404,7 +410,12 @@ export class Game {
   private startPreview(): void {
     this.grenades = this.mode.grenadesPerLevel
     this.previewT = 0
+    this.drainT = -1
     this.phase = 'preview'
+  }
+
+  get previewWaiting(): boolean {
+    return this.phase === 'preview' && this.previewT >= this.previewDur
   }
 
   private useFlash(): void {
@@ -505,17 +516,15 @@ export class Game {
     this.audio.setNear(0)
   }
 
-  private endPreview(): void {
-    this.previewEndedAt = this.clock
-    this.phase = 'playing'
-  }
-
-  previewState(): { u: number; alpha: number } | null {
+  previewState(): { u: number; cut: number; alpha: number } | null {
     if (this.phase === 'preview') {
-      return { u: Math.min(1, this.previewT / this.previewDur), alpha: 0.9 }
+      return { u: Math.min(1, this.previewT / this.previewDur), cut: 0, alpha: 0.9 }
     }
-    const since = this.clock - this.previewEndedAt
-    if (since < 0.9) return { u: 1, alpha: 0.9 * (1 - since / 0.9) }
+    if (this.drainT >= 0) {
+      const q = Math.min(1, this.drainT / this.drainDur)
+      const cut = q * q * (3 - 2 * q)
+      return { u: 1, cut, alpha: 0.9 - 0.35 * q }
+    }
     return null
   }
 
@@ -879,6 +888,6 @@ export class Game {
       `+${final.toLocaleString('fr-FR')} pts`
     this.levelPoints = 0
     this.phase = 'transition'
-    this.transitionT = done >= RUN_LENGTH ? 0.6 : 3.2
+    this.transitionT = 0.8
   }
 }
