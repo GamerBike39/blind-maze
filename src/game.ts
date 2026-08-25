@@ -1343,6 +1343,18 @@ export class Game {
     this.enterArena()
   }
 
+  devCycleBoss(): void {
+    const order: ('chargeur' | 'tisseur')[] = ['chargeur', 'tisseur']
+    const idx = order.indexOf(this.portalKind)
+    this.portalKind = order[(idx + 1) % order.length]
+    this.portalConsumed = false
+    this.portalCooldownUntil = -1
+    if (this.portalCell === null) {
+      const p = this.maze.path[Math.floor(this.maze.path.length * 0.55)]
+      this.portalCell = [p[0], p[1]]
+    }
+  }
+
   devGoto(n: number): void {
     if (this.phase !== 'playing' && this.phase !== 'preview' && this.phase !== 'paused') return
     if (this.arena) this.exitArena()

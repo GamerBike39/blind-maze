@@ -524,6 +524,9 @@ window.addEventListener('keydown', (e) => {
     case 'KeyY':
       game.devArena()
       break
+    case 'KeyB':
+      game.devCycleBoss()
+      break
     case 'KeyH':
       game.devRefill()
       break
@@ -625,8 +628,8 @@ function frame(now: number): void {
     devInfo.textContent =
       `DEV ×${game.timeScale}${game.god ? ' · GOD' : ''}${game.noclip ? ' · NOCLIP' : ''}\n` +
       `${Math.round(fpsEma)} fps · L${game.level + 1} ${game.gridSize}×${game.gridSize} · ${game.phase}${game.inArena ? ' · ARENA' : ''}\n` +
-      `pos ${Math.round(game.ball.x)},${Math.round(game.ball.y)} · zones ${game.zones.length} · portail ${game.portalKind}${game.portalConsumed ? ' ✔' : ''}\n` +
-      `[N]niveau [T]portail [Y]arène [H]recharge [K]révèle\n[J]god [V]noclip [U/I]temps [M]modif [C]zone [O]skip`
+      `pos ${Math.round(game.ball.x)},${Math.round(game.ball.y)} · zones ${game.zones.length} · [B]oss : ${game.portalKind}${game.portalConsumed ? ' ✔' : ''}\n` +
+      `[N]niveau [T]portail [Y]arène [B]boss [H]recharge [K]révèle\n[J]god [V]noclip [U/I]temps [M]modif [C]zone [O]skip`
   } else {
     devInfo.classList.add('hidden')
   }
