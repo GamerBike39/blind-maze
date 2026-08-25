@@ -616,7 +616,8 @@ function frame(now: number): void {
 
   hudTime.textContent = fmtTime(game.totalTime)
   const mt = game.modifierTag()
-  const tags = [mt, game.inArena ? 'GARDIEN' : ''].filter(Boolean).join(' · ')
+  const arenaTag = game.arena?.kind === 'sillage' ? 'SILLAGE' : game.inArena ? 'GARDIEN' : ''
+  const tags = [mt, arenaTag].filter(Boolean).join(' · ')
   hudLevel.textContent =
     `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}` +
     (tags ? ` · ⟬${tags}⟭` : '')

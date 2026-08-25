@@ -390,6 +390,14 @@ export class Input {
     return ZERO
   }
 
+  horizontalAxis(): number {
+    const gp = this.pad()
+    if (gp) return stick(gp.axes[0] ?? 0, 0).x
+    const left = this.keys.has('KeyA') || this.keys.has('ArrowLeft')
+    const right = this.keys.has('KeyD') || this.keys.has('ArrowRight')
+    return Number(right) - Number(left)
+  }
+
   rightStick(): Stick {
     const tp = this.touchProbe
     if (tp) {

@@ -197,6 +197,7 @@ export class FxLayer {
   private prevPhase: Game['phase'] = 'ready'
   private prevInArena = false
   private prevShields = 99
+  private prevSillageStability = 100
 
   private reduced: boolean
   private dead = false
@@ -344,11 +345,18 @@ export class FxLayer {
 
     if (g.inArena && !this.prevInArena) {
       const orange = g.portalKind === 'chargeur'
-      this.shock(0.5, 0.5, 1.9, orange ? ORANGE : MAGENTA, 1.25)
+      const sillage = g.portalKind === 'sillage'
+      const arenaCol = orange ? ORANGE : sillage ? CYAN : MAGENTA
+      this.shock(0.5, 0.5, 1.9, arenaCol, 1.25)
       this.whiteout(0.3)
       this.surge(1.1)
-      this.tintTarget = orange ? [1.06, 0.9, 0.97] : [1.05, 0.92, 1.1]
+      this.tintTarget = orange
+        ? [1.06, 0.9, 0.97]
+        : sillage
+          ? [0.9, 1.04, 1.12]
+          : [1.05, 0.92, 1.1]
       this.prevShields = g.arena?.shields ?? 99
+      this.prevSillageStability = g.arena?.sillage?.stability ?? 100
     } else if (!g.inArena && this.prevInArena) {
       this.tintTarget = [1, 1, 1]
       if (this.enabled && !this.dead) {
@@ -365,7 +373,16 @@ export class FxLayer {
     }
     if (g.inArena && g.arena) {
       const A = g.arena
-      if (A.shields < this.prevShields) {
+      if (A.kind === 'sillage' && A.sillage) {
+        const S = A.sillage
+        if (S.stability < this.prevSillageStability - 0.05) {
+          const pressure = Math.min(1, S.near)
+          this.shock(S.playerX / BOARD, S.playerY / BOARD, 0.45 + pressure * 0.8, CYAN, 1.1)
+          this.caSpike = Math.max(this.caSpike, 0.75 + pressure * 0.9)
+          this.surge(0.45 + pressure * 0.35)
+        }
+        this.prevSillageStability = S.stability
+      } else if (A.shields < this.prevShields) {
         this.shock(
           A.bx / BOARD,
           A.by / BOARD,
