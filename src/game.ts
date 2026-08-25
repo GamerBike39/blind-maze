@@ -198,7 +198,6 @@ export interface Hazard {
 
 export interface Arena {
   kind: 'chargeur' | 'tisseur'
-  hp: number
   shields: number
   invulnT: number
   t: number
@@ -211,6 +210,7 @@ export interface Arena {
   ldx: number
   ldy: number
   nextDashAt: number
+  windupDur: number
   dashCombo: number
   bounces: number
   shocks: { t0: number; done: boolean }[]
@@ -283,7 +283,6 @@ export class Game {
   private grazeAt = new Map<number, number>()
   private sonarT0 = -1
   private sonarPrevR = 0
-  private bossHitAt = -1
   private bossTurnAt = 0
   private savedPos = { x: BOARD / 2, y: BOARD / 2 }
   previewT = 0
@@ -759,8 +758,7 @@ export class Game {
     this.savedPos = { x: this.ball.x, y: this.ball.y }
     this.arena = {
       kind,
-      hp: kind === 'chargeur' ? 3 : 99,
-      shields: kind === 'tisseur' ? 2 : 99,
+      shields: kind === 'tisseur' ? 2 : 2,
       invulnT: -1,
       t: 0,
       nextAttackAt: this.clock + 1,
@@ -772,6 +770,7 @@ export class Game {
       ldx: 0,
       ldy: -1,
       nextDashAt: this.clock + 1.8,
+      windupDur: 0.4,
       dashCombo: 0,
       bounces: 0,
       shocks: [],
@@ -892,22 +891,23 @@ export class Game {
           this.audio.ping()
         }
       } else if (lunging) {
-        A.bx += A.ldx * cell * 9.5 * dt
-        A.by += A.ldy * cell * 9.5 * dt
+        A.bx += A.ldx * cell * (A.dashCombo === 0 ? 9.8 : 10.4) * dt
+        A.by += A.ldy * cell * (A.dashCombo === 0 ? 10.4 : 11) * dt
       } else {
         A.bx += A.bvx * dt
         A.by += A.bvy * dt
         const wob = Math.sin(this.clock * 1.7)
         if (this.clock > this.bossTurnAt) {
-          this.bossTurnAt = this.clock + 0.7 + Math.random() * 0.6
-          const a = Math.atan2(A.bvy, A.bvx) + wob * 0.55
-          const bs = Math.hypot(A.bvx, A.bvy)
+          this.bossTurnAt = this.clock + 0.55 + Math.random() * 0.45
+          const a = Math.atan2(A.bvy, A.bvx) + wob * 0.85
+          const bs = Math.max(cell * 3.6, Math.hypot(A.bvx, A.bvy))
           A.bvx = Math.cos(a) * bs
           A.bvy = Math.sin(a) * bs
         }
-        if (this.clock > A.nextDashAt && this.clock - A.flash > 1) {
-          A.nextDashAt = this.clock + 2.3 + Math.random() * 0.9
+        if (this.clock > A.nextDashAt) {
+          A.nextDashAt = this.clock + 2.1 + Math.random() * 0.9
           A.dashCombo = 0
+          A.windupDur = 0.24 + Math.random() * 0.36
           A.windup = this.clock
           this.audio.tick()
         }
@@ -920,6 +920,7 @@ export class Game {
         if (hitWall || this.clock >= A.lungeUntil) {
           if (A.dashCombo === 0) {
             A.dashCombo = 1
+            A.windupDur = 0.12 + Math.random() * 0.12
             A.windup = this.clock
             this.audio.tick()
           } else {
@@ -943,7 +944,7 @@ export class Game {
         A.bvy = ro.vy
         if (bounced) {
           A.bounces++
-          if (A.bounces % 2 === 0) {
+          if (A.bounces % 3 === 0) {
             A.shocks.push({ t0: this.clock, done: false })
             this.audio.tick()
           }
@@ -951,15 +952,15 @@ export class Game {
       }
       for (let i = A.shocks.length - 1; i >= 0; i--) {
         const s = A.shocks[i]
-        const q = (this.clock - s.t0) / 0.55
+        const q = (this.clock - s.t0) / 0.5
         if (q >= 1) {
           A.shocks.splice(i, 1)
           continue
         }
         if (!s.done) {
-          const wr = A.br + q * cell * 2.4
+          const wr = A.br + q * cell * 1.5
           const d = Math.hypot(b.x - A.bx, b.y - A.by)
-          if (Math.abs(d - wr) < b.r * 0.95) {
+          if (Math.abs(d - wr) < b.r * 0.8) {
             s.done = true
             this.hitPlayer(b.x - A.bx, b.y - A.by)
           }
@@ -1050,36 +1051,12 @@ export class Game {
       const dy = b.y - A.by
       const d = Math.hypot(dx, dy) || 1
       const rr = b.r + A.br
-      let sp = Math.hypot(b.vx, b.vy)
-      if (d < rr && this.clock - this.bossHitAt > 0.25) {
+      if (d < rr) {
         const nx = dx / d
         const ny = dy / d
-        const toward = -(b.vx * nx + b.vy * ny)
         const lunging = this.clock < A.lungeUntil
         if (lunging) {
           this.hitPlayer(nx, ny)
-        } else if (sp > cell * 0.95 && toward > cell * 0.25) {
-          this.bossHitAt = this.clock
-          A.flash = this.clock
-          A.hp--
-          const boost = 1.35
-          const bs = Math.hypot(A.bvx, A.bvy) * boost
-          A.bvx = -nx * bs
-          A.bvy = -ny * bs
-          b.vx = nx * cell * 2.9
-          b.vy = ny * cell * 2.9
-          if (A.hp > 0) {
-            this.popup(A.bx, A.by - A.br - 10, 'TOUCHÉ !', '#fb923c', 1.3)
-          }
-          this.audio.impact(0.85)
-          this.audio.ping()
-          this.input.rumble(0.9, 0.4, 150)
-          this.shake = Math.min(1, this.shake + 0.5)
-          this.spawnBurst(A.bx, A.by, -nx, -ny, 0.9)
-          if (A.hp <= 0) {
-            this.winArena()
-            return
-          }
         } else {
           b.x = A.bx + nx * rr
           b.y = A.by + ny * rr

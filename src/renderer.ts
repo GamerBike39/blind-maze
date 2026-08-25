@@ -254,7 +254,7 @@ export class Renderer {
     ctx.font = '600 13px "Segoe UI", system-ui, sans-serif'
     ctx.fillStyle = chargeur ? 'rgba(251,146,60,0.85)' : 'rgba(232,121,249,0.85)'
     ctx.fillText(
-      chargeur ? 'PERCUTE-LE ×3' : `SURVIS — ${Math.max(0, 12 - A.t).toFixed(1)}s`,
+      chargeur ? 'LISEZ SON DÉPART — SURVIS 15s' : `SURVIS — ${Math.max(0, 12 - A.t).toFixed(1)}s`,
       A.Ax + A.Aw / 2,
       A.Ay + A.Ah + 24,
     )
@@ -262,32 +262,37 @@ export class Renderer {
 
     if (chargeur) {
       for (const s of A.shocks) {
-        const q = (g.clock - s.t0) / 0.55
+        const q = (g.clock - s.t0) / 0.5
         if (q < 0 || q >= 1) continue
         ctx.save()
         ctx.globalCompositeOperation = 'lighter'
         ctx.strokeStyle = `rgba(253,164,175,${((1 - q) * 0.65).toFixed(3)})`
         ctx.lineWidth = 2.5
         ctx.beginPath()
-        ctx.arc(A.bx, A.by, A.br + q * g.maze.cell * 2.4, 0, Math.PI * 2)
+        ctx.arc(A.bx, A.by, A.br + q * g.maze.cell * 1.5, 0, Math.PI * 2)
         ctx.stroke()
         ctx.restore()
       }
-      for (let i = 0; i < A.hp; i++) {
-        const x = A.Ax + A.Aw / 2 + (i - (A.hp - 1) / 2) * 20
+      for (let i = 0; i <= A.shields; i++) {
+        const x = A.Ax + A.Aw / 2 + (i - A.shields / 2) * 20
         const y = A.Ay + 16
         ctx.save()
         ctx.translate(x, y)
         ctx.rotate(Math.PI / 4)
-        ctx.fillStyle = '#fb923c'
-        ctx.shadowColor = '#fb923c'
-        ctx.shadowBlur = 8
-        ctx.fillRect(-4, -4, 8, 8)
+        if (i < A.shields) {
+          ctx.fillStyle = '#fb923c'
+          ctx.shadowColor = '#fb923c'
+          ctx.shadowBlur = 8
+          ctx.fillRect(-4, -4, 8, 8)
+        } else {
+          ctx.strokeStyle = 'rgba(251,146,60,0.35)'
+          ctx.lineWidth = 1.5
+          ctx.strokeRect(-4, -4, 8, 8)
+        }
         ctx.restore()
       }
       if (A.windup > 0) {
-        const dur = A.dashCombo === 0 ? 0.34 : 0.16
-        const p = Math.min(1, (g.clock - A.windup) / dur)
+        const p = Math.min(1, (g.clock - A.windup) / Math.max(0.01, A.windupDur))
         ctx.save()
         ctx.setLineDash([8, 8])
         ctx.strokeStyle = `rgba(253,164,175,${(0.3 + 0.5 * p).toFixed(3)})`
