@@ -49,6 +49,17 @@ body {
     inset 0 0 40px rgba(0, 0, 0, 0.6);
 }
 
+#fx {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 18px;
+  box-shadow: 0 0 70px rgba(34, 211, 238, 0.12);
+  pointer-events: none;
+}
+
 #hud {
   position: absolute;
   top: 14px;
