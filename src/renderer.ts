@@ -285,15 +285,16 @@ export class Renderer {
         ctx.fillRect(-4, -4, 8, 8)
         ctx.restore()
       }
-      if (A.windup > 0 && g.clock - A.windup < 0.55) {
-        const p = (g.clock - A.windup) / 0.55
+      if (A.windup > 0) {
+        const dur = A.dashCombo === 0 ? 0.34 : 0.16
+        const p = Math.min(1, (g.clock - A.windup) / dur)
         ctx.save()
         ctx.setLineDash([8, 8])
-        ctx.strokeStyle = `rgba(253,164,175,${(0.35 + 0.45 * p).toFixed(3)})`
-        ctx.lineWidth = 2 + p * 2
+        ctx.strokeStyle = `rgba(253,164,175,${(0.3 + 0.5 * p).toFixed(3)})`
+        ctx.lineWidth = 2 + p * 2.5
         ctx.beginPath()
         ctx.moveTo(A.bx, A.by)
-        ctx.lineTo(A.bx + A.ldx * A.Aw * 0.7, A.by + A.ldy * A.Ah * 1.4)
+        ctx.lineTo(A.bx + A.ldx * A.Aw * 0.75, A.by + A.ldy * A.Ah * 1.6)
         ctx.stroke()
         ctx.restore()
       }

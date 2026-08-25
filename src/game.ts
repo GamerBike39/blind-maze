@@ -877,16 +877,18 @@ export class Game {
     }
 
     if (A.kind === 'chargeur') {
-      const lunging = this.clock < A.lungeUntil
-      if (A.windup > 0) {
-        const dur = A.dashCombo === 0 ? 0.38 : 0.18
+      const aiming = A.windup > 0
+      const lunging = !aiming && this.clock < A.lungeUntil
+      if (aiming) {
+        const dur = A.dashCombo === 0 ? 0.34 : 0.16
         const dx = b.x - A.bx
         const dy = b.y - A.by
         const d = Math.hypot(dx, dy) || 1
         A.ldx = dx / d
         A.ldy = dy / d
-        if (this.clock - A.windup > dur) {
-          A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.5 : 0.42)
+        if (this.clock - A.windup >= dur) {
+          A.windup = -1
+          A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.46 : 0.4)
           this.audio.ping()
         }
       } else if (lunging) {
@@ -910,11 +912,11 @@ export class Game {
           this.audio.tick()
         }
       }
-      const boss = { x: A.bx, y: A.by, vx: lunging ? 0 : A.bvx, vy: lunging ? 0 : A.bvy }
-      const hitWall = this.boundsBounce(boss, A.br, lunging ? 0 : 1)
-      A.bx = boss.x
-      A.by = boss.y
       if (lunging) {
+        const lo = { x: A.bx, y: A.by, vx: 0, vy: 0 }
+        const hitWall = this.boundsBounce(lo, A.br, 0)
+        A.bx = lo.x
+        A.by = lo.y
         if (hitWall || this.clock >= A.lungeUntil) {
           if (A.dashCombo === 0) {
             A.dashCombo = 1
@@ -924,13 +926,22 @@ export class Game {
             A.dashCombo = 0
             A.windup = -1
             A.lungeUntil = -1
-            A.nextDashAt = this.clock + 2.4 + Math.random() * 0.9
+            A.nextDashAt = this.clock + 2.3 + Math.random() * 0.9
           }
         }
+      } else if (aiming) {
+        const ao = { x: A.bx, y: A.by, vx: 0, vy: 0 }
+        this.boundsBounce(ao, A.br, 0)
+        A.bx = ao.x
+        A.by = ao.y
       } else {
-        A.bvx = boss.vx
-        A.bvy = boss.vy
-        if (hitWall) {
+        const ro = { x: A.bx, y: A.by, vx: A.bvx, vy: A.bvy }
+        const bounced = this.boundsBounce(ro, A.br, 1)
+        A.bx = ro.x
+        A.by = ro.y
+        A.bvx = ro.vx
+        A.bvy = ro.vy
+        if (bounced) {
           A.bounces++
           if (A.bounces % 2 === 0) {
             A.shocks.push({ t0: this.clock, done: false })
