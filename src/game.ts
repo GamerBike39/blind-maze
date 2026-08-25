@@ -809,6 +809,30 @@ export class Game {
       Aw,
       Ah,
     }
+    if (kind === 'chargeur') {
+      const Aa = this.arena!
+      const cands: [number, number][] = [
+        [BOARD / 2, Ay + Ah / 2],
+        [BOARD / 2 - Aw * 0.25, Ay + Ah / 2],
+        [BOARD / 2 + Aw * 0.25, Ay + Ah / 2],
+        [BOARD / 2, Ay + Ah * 0.28],
+        [BOARD / 2, Ay + Ah * 0.72],
+      ]
+      for (const [cxp, cyp] of cands) {
+        const safe = !spikes.some(
+          (s) =>
+            cxp > s.x - cell * 0.5 &&
+            cxp < s.x + s.w + cell * 0.5 &&
+            cyp > s.y - cell * 0.5 &&
+            cyp < s.y + s.h + cell * 0.5,
+        )
+        if (safe) {
+          Aa.bx = cxp
+          Aa.by = cyp
+          break
+        }
+      }
+    }
     this.ball.x = BOARD / 2
     this.ball.y = Ay + Ah - this.ball.r - 10
     this.ball.vx = 0
@@ -906,12 +930,16 @@ export class Game {
       if (stunned) {
         // étourdi après impalement : immobile
       } else if (aiming) {
-        const dx = b.x - A.bx
-        const dy = b.y - A.by
-        const d = Math.hypot(dx, dy) || 1
-        A.ldx = dx / d
-        A.ldy = dy / d
-        if (this.clock - A.windup >= A.windupDur) {
+        const elapsed = this.clock - A.windup
+        const lockWin = A.dashCombo === 0 ? 0.22 : 0.12
+        if (elapsed < Math.max(0.05, A.windupDur - lockWin)) {
+          const dx = b.x - A.bx
+          const dy = b.y - A.by
+          const d = Math.hypot(dx, dy) || 1
+          A.ldx = dx / d
+          A.ldy = dy / d
+        }
+        if (elapsed >= A.windupDur) {
           A.windup = -1
           A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.44 : 0.38)
           this.audio.ping()
@@ -937,6 +965,22 @@ export class Game {
           A.windupDur = 0.24 + Math.random() * 0.36
           A.windup = this.clock
           this.audio.tick()
+        }
+        for (const s of A.spikes) {
+          const cxr = Math.min(s.x + s.w, Math.max(s.x, A.bx))
+          const cyr = Math.min(s.y + s.h, Math.max(s.y, A.by))
+          const ddx = A.bx - cxr
+          const ddy = A.by - cyr
+          const dd = Math.hypot(ddx, ddy)
+          if (dd < A.br) {
+            if (dd > 1e-4) {
+              A.bx = cxr + (ddx / dd) * A.br
+              A.by = cyr + (ddy / dd) * A.br
+            } else {
+              A.bx = A.Ax + A.Aw / 2
+              A.by = A.Ay + A.Ah / 2
+            }
+          }
         }
       }
       const co = { x: A.bx, y: A.by, vx: 0, vy: 0 }

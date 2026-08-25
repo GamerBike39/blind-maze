@@ -334,11 +334,16 @@ export class Renderer {
         ctx.restore()
       }
       if (A.windup > 0) {
-        const p = Math.min(1, (g.clock - A.windup) / Math.max(0.01, A.windupDur))
+        const lockWin = A.dashCombo === 0 ? 0.22 : 0.12
+        const elapsed = g.clock - A.windup
+        const p = Math.min(1, elapsed / Math.max(0.01, A.windupDur))
+        const locked = elapsed >= Math.max(0.01, A.windupDur - lockWin)
         ctx.save()
-        ctx.setLineDash([8, 8])
-        ctx.strokeStyle = `rgba(253,164,175,${(0.3 + 0.5 * p).toFixed(3)})`
-        ctx.lineWidth = 2 + p * 2.5
+        if (!locked) ctx.setLineDash([8, 8])
+        ctx.strokeStyle = locked
+          ? `rgba(248,113,113,${(0.7 + 0.3 * Math.sin(g.clock * 40)).toFixed(3)})`
+          : `rgba(253,164,175,${(0.3 + 0.5 * p).toFixed(3)})`
+        ctx.lineWidth = 2 + p * 2.5 + (locked ? 1.5 : 0)
         ctx.beginPath()
         ctx.moveTo(A.bx, A.by)
         ctx.lineTo(A.bx + A.ldx * A.Aw * 0.75, A.by + A.ldy * A.Ah * 1.6)
