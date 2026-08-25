@@ -491,13 +491,6 @@ const renderer = new Renderer(canvas)
 const bg = new Background(document.getElementById('bg') as HTMLCanvasElement)
 const fx = FxLayer.create(document.getElementById('stage')!, canvas)
 
-if (new URLSearchParams(location.search).has('autostart')) {
-  setTimeout(() => input.pressStart(), 400)
-  setTimeout(() => input.pressStart(), 2100)
-  setTimeout(() => game.fireSonar(), 2700)
-  setTimeout(() => game.useFlashPublic(), 3100)
-}
-
 {
   const s = loadSettings()
   audio.setVolume(s.vol / 100)

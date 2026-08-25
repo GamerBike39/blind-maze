@@ -404,6 +404,7 @@ export class FxLayer {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.scratch)
 
     const q = rtA.w
+    gl.useProgram(progBright)
     gl.bindFramebuffer(gl.FRAMEBUFFER, rtA.fbo)
     gl.viewport(0, 0, q, q)
     this.use(progBright, 'uTex', this.texScene, 0)
@@ -442,6 +443,7 @@ export class FxLayer {
     }
     const t = now
 
+    gl.useProgram(progComp)
     this.use(progComp, 'uScene', this.texScene, 0)
     this.use(progComp, 'uBloomTight', rtA.tex, 1)
     this.use(progComp, 'uBloomWide', rtC.tex, 2)
@@ -455,7 +457,7 @@ export class FxLayer {
     this.set(progComp, 'uAddAmt', this.addAmt)
     this.set(progComp, 'uTint', this.tint[0], this.tint[1], this.tint[2])
     this.set(progComp, 'uGrain', this.reduced ? 0 : 0.034)
-    this.set(progComp, 'uWaveCount', waveN)
+    this.setInt(progComp, 'uWaveCount', waveN)
     this.setArr(progComp, 'uWaves', waveData, 4)
     this.setArr(progComp, 'uWaveCol', waveCols, 3)
     this.setArr(progComp, 'uWaveSpd', waveSpds, 1)
@@ -464,6 +466,7 @@ export class FxLayer {
 
   private blurPass(p: WebGLProgram, from: Rt, to: Rt, dx: number, dy: number): void {
     const gl = this.gl
+    gl.useProgram(p)
     gl.bindFramebuffer(gl.FRAMEBUFFER, to.fbo)
     gl.viewport(0, 0, to.w, to.h)
     this.use(p, 'uTex', from.tex, 0)
@@ -524,6 +527,12 @@ export class FxLayer {
     if (z !== undefined) this.gl.uniform3f(l, x, y!, z)
     else if (y !== undefined) this.gl.uniform2f(l, x, y)
     else this.gl.uniform1f(l, x)
+  }
+
+  private setInt(p: WebGLProgram, name: string, value: number): void {
+    const l = this.loc(p, name)
+    if (!l) return
+    this.gl.uniform1i(l, value)
   }
 
   private setArr(p: WebGLProgram, name: string, data: Float32Array, size: 1 | 3 | 4): void {
