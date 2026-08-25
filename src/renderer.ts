@@ -261,6 +261,18 @@ export class Renderer {
     ctx.restore()
 
     if (chargeur) {
+      for (const s of A.shocks) {
+        const q = (g.clock - s.t0) / 0.55
+        if (q < 0 || q >= 1) continue
+        ctx.save()
+        ctx.globalCompositeOperation = 'lighter'
+        ctx.strokeStyle = `rgba(253,164,175,${((1 - q) * 0.65).toFixed(3)})`
+        ctx.lineWidth = 2.5
+        ctx.beginPath()
+        ctx.arc(A.bx, A.by, A.br + q * g.maze.cell * 2.4, 0, Math.PI * 2)
+        ctx.stroke()
+        ctx.restore()
+      }
       for (let i = 0; i < A.hp; i++) {
         const x = A.Ax + A.Aw / 2 + (i - (A.hp - 1) / 2) * 20
         const y = A.Ay + 16

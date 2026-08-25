@@ -211,6 +211,9 @@ export interface Arena {
   ldx: number
   ldy: number
   nextDashAt: number
+  dashCombo: number
+  bounces: number
+  shocks: { t0: number; done: boolean }[]
   bx: number
   by: number
   bvx: number
@@ -768,11 +771,14 @@ export class Game {
       lungeUntil: -1,
       ldx: 0,
       ldy: -1,
-      nextDashAt: this.clock + 2.6,
+      nextDashAt: this.clock + 1.8,
+      dashCombo: 0,
+      bounces: 0,
+      shocks: [],
       bx: BOARD / 2,
       by: Ay + cell * 0.9,
-      bvx: cell * 2.3,
-      bvy: cell * 1.6,
+      bvx: cell * 3.4,
+      bvy: cell * 2.9,
       br: cell * (kind === 'chargeur' ? 0.42 : 0.36),
       flash: -1,
       Ax,
@@ -871,16 +877,21 @@ export class Game {
     }
 
     if (A.kind === 'chargeur') {
+      const lunging = this.clock < A.lungeUntil
       if (A.windup > 0) {
-        A.bx -= A.ldx * cell * 0.5 * dt
-        A.by -= A.ldy * cell * 0.5 * dt
-        if (this.clock - A.windup > 0.55) {
-          A.lungeUntil = this.clock + 0.36
+        const dur = A.dashCombo === 0 ? 0.38 : 0.18
+        const dx = b.x - A.bx
+        const dy = b.y - A.by
+        const d = Math.hypot(dx, dy) || 1
+        A.ldx = dx / d
+        A.ldy = dy / d
+        if (this.clock - A.windup > dur) {
+          A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.5 : 0.42)
           this.audio.ping()
         }
-      } else if (this.clock < A.lungeUntil) {
-        A.bx += A.ldx * cell * 7.5 * dt
-        A.by += A.ldy * cell * 7.5 * dt
+      } else if (lunging) {
+        A.bx += A.ldx * cell * 9.5 * dt
+        A.by += A.ldy * cell * 9.5 * dt
       } else {
         A.bx += A.bvx * dt
         A.by += A.bvy * dt
@@ -893,26 +904,55 @@ export class Game {
           A.bvy = Math.sin(a) * bs
         }
         if (this.clock > A.nextDashAt && this.clock - A.flash > 1) {
-          A.nextDashAt = this.clock + 3.4 + Math.random() * 1.2
+          A.nextDashAt = this.clock + 2.3 + Math.random() * 0.9
+          A.dashCombo = 0
           A.windup = this.clock
-          const dx = b.x - A.bx
-          const dy = b.y - A.by
-          const d = Math.hypot(dx, dy) || 1
-          A.ldx = dx / d
-          A.ldy = dy / d
           this.audio.tick()
         }
       }
-      const boss = { x: A.bx, y: A.by, vx: this.clock < A.lungeUntil ? 0 : A.bvx, vy: this.clock < A.lungeUntil ? 0 : A.bvy }
-      const hitWall = this.boundsBounce(boss, A.br, this.clock < A.lungeUntil ? 0 : 1)
+      const boss = { x: A.bx, y: A.by, vx: lunging ? 0 : A.bvx, vy: lunging ? 0 : A.bvy }
+      const hitWall = this.boundsBounce(boss, A.br, lunging ? 0 : 1)
       A.bx = boss.x
       A.by = boss.y
-      if (!(this.clock < A.lungeUntil)) {
+      if (lunging) {
+        if (hitWall || this.clock >= A.lungeUntil) {
+          if (A.dashCombo === 0) {
+            A.dashCombo = 1
+            A.windup = this.clock
+            this.audio.tick()
+          } else {
+            A.dashCombo = 0
+            A.windup = -1
+            A.lungeUntil = -1
+            A.nextDashAt = this.clock + 2.4 + Math.random() * 0.9
+          }
+        }
+      } else {
         A.bvx = boss.vx
         A.bvy = boss.vy
-      } else if (hitWall) {
-        A.lungeUntil = -1
-        A.windup = -1
+        if (hitWall) {
+          A.bounces++
+          if (A.bounces % 2 === 0) {
+            A.shocks.push({ t0: this.clock, done: false })
+            this.audio.tick()
+          }
+        }
+      }
+      for (let i = A.shocks.length - 1; i >= 0; i--) {
+        const s = A.shocks[i]
+        const q = (this.clock - s.t0) / 0.55
+        if (q >= 1) {
+          A.shocks.splice(i, 1)
+          continue
+        }
+        if (!s.done) {
+          const wr = A.br + q * cell * 2.4
+          const d = Math.hypot(b.x - A.bx, b.y - A.by)
+          if (Math.abs(d - wr) < b.r * 0.95) {
+            s.done = true
+            this.hitPlayer(b.x - A.bx, b.y - A.by)
+          }
+        }
       }
     }
 
@@ -1000,18 +1040,18 @@ export class Game {
       const d = Math.hypot(dx, dy) || 1
       const rr = b.r + A.br
       let sp = Math.hypot(b.vx, b.vy)
-      if (d < rr && this.clock - this.bossHitAt > 0.35) {
+      if (d < rr && this.clock - this.bossHitAt > 0.25) {
         const nx = dx / d
         const ny = dy / d
         const toward = -(b.vx * nx + b.vy * ny)
-        const lunging = this.clock < A.lungeUntil || A.windup > 0
+        const lunging = this.clock < A.lungeUntil
         if (lunging) {
           this.hitPlayer(nx, ny)
         } else if (sp > cell * 0.95 && toward > cell * 0.25) {
           this.bossHitAt = this.clock
           A.flash = this.clock
           A.hp--
-          const boost = 1.28
+          const boost = 1.35
           const bs = Math.hypot(A.bvx, A.bvy) * boost
           A.bvx = -nx * bs
           A.bvy = -ny * bs
