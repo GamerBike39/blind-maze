@@ -203,7 +203,7 @@ export interface Arena {
   t: number
   nextAttackAt: number
   patternIdx: number
-  pending: { at: number; type: 'aim' }[]
+  pending: { at: number; make: () => Hazard }[]
   haz: Hazard[]
   windup: number
   lungeUntil: number
@@ -969,38 +969,72 @@ export class Game {
     }
 
     if (A.kind === 'tisseur') {
+      const tier = Math.min(2, Math.floor(this.level / 2))
+      const spd = 1 + 0.12 * tier
+      const cadence = 1.9 - 0.22 * tier
       A.bx = A.Ax + A.Aw / 2
       A.by = A.Ay + A.Ah * 0.26 + Math.sin(this.clock * 2.2) * cell * 0.14
       while (A.pending.length > 0 && A.pending[0].at <= this.clock) {
-        A.pending.shift()
-        const dxp = b.x - A.bx
-        const dyp = b.y - A.by
-        const dp = Math.hypot(dxp, dyp) || 1
-        const sp = cell * 3.3
-        A.haz.push({ kind: 'orb', x: A.bx, y: A.by, vx: (dxp / dp) * sp, vy: (dyp / dp) * sp, r: cell * 0.16, w: 0, h: 0 })
+        const item = A.pending.shift()!
+        A.haz.push(item.make())
         this.audio.tick()
       }
       if (this.clock >= A.nextAttackAt) {
-        const k = A.patternIdx % 3
+        const k = A.patternIdx % 5
         A.patternIdx++
-        A.nextAttackAt = this.clock + 1.9
+        A.nextAttackAt = this.clock + cadence
         if (k === 0) {
-          for (let i = 0; i < 3; i++) A.pending.push({ at: this.clock + i * 0.14, type: 'aim' })
+          const aimN = tier >= 2 ? 4 : 3
+          for (let i = 0; i < aimN; i++) {
+            A.pending.push({
+              at: this.clock + i * 0.13,
+              make: () => {
+                const dxp = b.x - A.bx
+                const dyp = b.y - A.by
+                const dp = Math.hypot(dxp, dyp) || 1
+                const sp3 = cell * 3.3 * spd
+                return { kind: 'orb' as const, x: A.bx, y: A.by, vx: (dxp / dp) * sp3, vy: (dyp / dp) * sp3, r: cell * 0.16, w: 0, h: 0 }
+              },
+            })
+          }
         } else if (k === 1) {
-          for (let i = 0; i < 11; i++) {
-            const a = (i / 11) * Math.PI * 2 + this.clock * 0.4
-            const sp2 = cell * 2.4
+          const ringN = 11 + 2 * tier
+          for (let i = 0; i < ringN; i++) {
+            const a = (i / ringN) * Math.PI * 2 + this.clock * 0.4
+            const sp2 = cell * 2.4 * spd
             A.haz.push({ kind: 'orb', x: A.bx, y: A.by, vx: Math.cos(a) * sp2, vy: Math.sin(a) * sp2, r: cell * 0.15, w: 0, h: 0 })
           }
-        } else {
-          const gapW = cell * 1.7
+        } else if (k === 2) {
+          const gapW = cell * (1.7 - 0.22 * tier)
           const gx = A.Ax + gapW / 2 + Math.random() * (A.Aw - gapW)
           const th = cell * 0.32
           const segL = gx - gapW / 2 - A.Ax
           const segR = A.Ax + A.Aw - (gx + gapW / 2)
-          const vy = cell * 2.8
+          const vy = cell * (2.8 + 0.25 * tier)
           if (segL > 4) A.haz.push({ kind: 'bar', x: A.Ax, y: A.Ay - th, vx: 0, vy, r: 0, w: segL, h: th })
           if (segR > 4) A.haz.push({ kind: 'bar', x: gx + gapW / 2, y: A.Ay - th, vx: 0, vy, r: 0, w: segR, h: th })
+        } else if (k === 3) {
+          const base = this.clock * 0.6
+          const n = 5 + tier
+          for (let i = 0; i < n; i++) {
+            const a = base + i * 0.55
+            const sp3 = cell * 2.9 * spd
+            A.pending.push({
+              at: this.clock + i * 0.11,
+              make: () => {
+                const aa = a + (this.clock - base) * 1.4
+                return { kind: 'orb' as const, x: A.bx, y: A.by, vx: Math.cos(aa) * sp3, vy: Math.sin(aa) * sp3, r: cell * 0.15, w: 0, h: 0 }
+              },
+            })
+          }
+        } else {
+          const th2 = cell * 0.32
+          const gy = A.Ay + A.Ah / 2 + (Math.random() - 0.5) * (A.Ah - cell * 2.2)
+          const segT = gy - cell * 0.85 - A.Ay
+          const segB = A.Ay + A.Ah - (gy + cell * 0.85)
+          const vx = -cell * (2.6 + 0.25 * tier) * (Math.random() < 0.5 ? -1 : 1)
+          if (segT > 4) A.haz.push({ kind: 'bar', x: vx < 0 ? A.Ax + A.Aw : A.Ax - th2, y: A.Ay, vx, vy: 0, r: 0, w: th2, h: segT })
+          if (segB > 4) A.haz.push({ kind: 'bar', x: vx < 0 ? A.Ax + A.Aw : A.Ax - th2, y: gy + cell * 0.85, vx, vy: 0, r: 0, w: th2, h: segB })
         }
       }
       for (let i = A.haz.length - 1; i >= 0; i--) {
@@ -1040,10 +1074,12 @@ export class Game {
         }
       }
       if (dead || A.shields < 0) return
-      if (A.t >= 12) {
-        this.winArena()
-        return
-      }
+    }
+
+    const surviveT = A.kind === 'chargeur' ? 15 : 12
+    if (A.t >= surviveT) {
+      this.winArena()
+      return
     }
 
     if (A.kind === 'chargeur') {
