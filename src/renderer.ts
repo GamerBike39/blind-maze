@@ -254,13 +254,55 @@ export class Renderer {
     ctx.font = '600 13px "Segoe UI", system-ui, sans-serif'
     ctx.fillStyle = chargeur ? 'rgba(251,146,60,0.85)' : 'rgba(232,121,249,0.85)'
     ctx.fillText(
-      chargeur ? 'LISEZ SON DÉPART — SURVIS 15s' : `SURVIS — ${Math.max(0, 12 - A.t).toFixed(1)}s`,
+      chargeur
+        ? `BAITEZ-LE DANS LES PIQUES — RESTE ${A.hp}`
+        : `SURVIS — ${Math.max(0, 12 - A.t).toFixed(1)}s`,
       A.Ax + A.Aw / 2,
       A.Ay + A.Ah + 24,
     )
     ctx.restore()
 
     if (chargeur) {
+      for (const s of A.spikes) {
+        const horiz = s.w > s.h
+        const len = horiz ? s.w : s.h
+        const count = Math.max(4, Math.floor(len / (g.maze.cell * 0.3)))
+        const tw = len / count
+        const pulse = 0.7 + 0.3 * Math.sin(g.clock * 5)
+        ctx.save()
+        ctx.fillStyle = `rgba(248,113,113,${(0.55 + 0.25 * pulse).toFixed(3)})`
+        ctx.strokeStyle = 'rgba(127,29,29,0.9)'
+        ctx.lineWidth = 1.5
+        for (let i = 0; i < count; i++) {
+          let bx: number
+          let by: number
+          let nx = 0
+          let ny = 1
+          if (horiz) {
+            bx = s.x + i * tw
+            by = s.y
+            ny = s.y <= A.Ay + A.Ah / 2 ? 1 : -1
+          } else {
+            bx = s.x
+            by = s.y + i * tw
+            nx = s.x <= A.Ax + A.Aw / 2 ? 1 : -1
+          }
+          ctx.beginPath()
+          if (horiz) {
+            ctx.moveTo(bx, by + (ny > 0 ? 0 : s.h))
+            ctx.lineTo(bx + tw / 2, by + s.h * ny)
+            ctx.lineTo(bx + tw, by + (ny > 0 ? 0 : s.h))
+          } else {
+            ctx.moveTo(bx + (nx > 0 ? 0 : s.w), by)
+            ctx.lineTo(bx + s.w * nx, by + tw / 2)
+            ctx.lineTo(bx + (nx > 0 ? 0 : s.w), by + tw)
+          }
+          ctx.closePath()
+          ctx.fill()
+          ctx.stroke()
+        }
+        ctx.restore()
+      }
       for (const s of A.shocks) {
         const q = (g.clock - s.t0) / 0.5
         if (q < 0 || q >= 1) continue

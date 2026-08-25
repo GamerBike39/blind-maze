@@ -198,6 +198,7 @@ export interface Hazard {
 
 export interface Arena {
   kind: 'chargeur' | 'tisseur'
+  hp: number
   shields: number
   invulnT: number
   t: number
@@ -214,6 +215,8 @@ export interface Arena {
   dashCombo: number
   bounces: number
   shocks: { t0: number; done: boolean }[]
+  spikes: { x: number; y: number; w: number; h: number }[]
+  stunUntil: number
   bx: number
   by: number
   bvx: number
@@ -756,8 +759,27 @@ export class Game {
     const Ay = (BOARD - Ah) / 2
     const kind = this.portalKind
     this.savedPos = { x: this.ball.x, y: this.ball.y }
+    const spikes: { x: number; y: number; w: number; h: number }[] = []
+    if (kind === 'chargeur') {
+      const th = cell * 0.3
+      const spanH = Aw * 0.36
+      const spanV = Ah * 0.36
+      const edges = ['top', 'bottom', 'left', 'right'].sort(() => Math.random() - 0.5)
+      for (const e of edges.slice(0, 2)) {
+        if (e === 'top') {
+          spikes.push({ x: Ax + (Aw - spanH) * (0.2 + Math.random() * 0.6), y: Ay, w: spanH, h: th })
+        } else if (e === 'bottom') {
+          spikes.push({ x: Ax + (Aw - spanH) * (0.2 + Math.random() * 0.6), y: Ay + Ah - th, w: spanH, h: th })
+        } else if (e === 'left') {
+          spikes.push({ x: Ax, y: Ay + (Ah - spanV) * (0.2 + Math.random() * 0.6), w: th, h: spanV })
+        } else {
+          spikes.push({ x: Ax + Aw - th, y: Ay + (Ah - spanV) * (0.2 + Math.random() * 0.6), w: th, h: spanV })
+        }
+      }
+    }
     this.arena = {
       kind,
+      hp: kind === 'chargeur' ? 3 : 99,
       shields: kind === 'tisseur' ? 2 : 2,
       invulnT: -1,
       t: 0,
@@ -774,6 +796,8 @@ export class Game {
       dashCombo: 0,
       bounces: 0,
       shocks: [],
+      spikes,
+      stunUntil: -1,
       bx: BOARD / 2,
       by: Ay + cell * 0.9,
       bvx: cell * 3.4,
@@ -876,27 +900,30 @@ export class Game {
     }
 
     if (A.kind === 'chargeur') {
-      const aiming = A.windup > 0
-      const lunging = !aiming && this.clock < A.lungeUntil
-      if (aiming) {
-        const dur = A.dashCombo === 0 ? 0.34 : 0.16
+      const stunned = this.clock < A.stunUntil
+      const aiming = !stunned && A.windup > 0
+      const lunging = !aiming && !stunned && this.clock < A.lungeUntil
+      if (stunned) {
+        // étourdi après impalement : immobile
+      } else if (aiming) {
         const dx = b.x - A.bx
         const dy = b.y - A.by
         const d = Math.hypot(dx, dy) || 1
         A.ldx = dx / d
         A.ldy = dy / d
-        if (this.clock - A.windup >= dur) {
+        if (this.clock - A.windup >= A.windupDur) {
           A.windup = -1
-          A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.46 : 0.4)
+          A.lungeUntil = this.clock + (A.dashCombo === 0 ? 0.44 : 0.38)
           this.audio.ping()
         }
       } else if (lunging) {
-        A.bx += A.ldx * cell * (A.dashCombo === 0 ? 9.8 : 10.4) * dt
-        A.by += A.ldy * cell * (A.dashCombo === 0 ? 10.4 : 11) * dt
+        const lsp = cell * (A.dashCombo === 0 ? 9.8 : 10.4)
+        A.bx += A.ldx * lsp * dt
+        A.by += A.ldy * lsp * dt
       } else {
         A.bx += A.bvx * dt
         A.by += A.bvy * dt
-        const wob = Math.sin(this.clock * 1.7)
+        const wob = Math.sin(this.clock * 2.1)
         if (this.clock > this.bossTurnAt) {
           this.bossTurnAt = this.clock + 0.55 + Math.random() * 0.45
           const a = Math.atan2(A.bvy, A.bvx) + wob * 0.85
@@ -912,12 +939,43 @@ export class Game {
           this.audio.tick()
         }
       }
+      const co = { x: A.bx, y: A.by, vx: 0, vy: 0 }
+      this.boundsBounce(co, A.br, 0)
+      A.bx = co.x
+      A.by = co.y
+
       if (lunging) {
-        const lo = { x: A.bx, y: A.by, vx: 0, vy: 0 }
-        const hitWall = this.boundsBounce(lo, A.br, 0)
-        A.bx = lo.x
-        A.by = lo.y
-        if (hitWall || this.clock >= A.lungeUntil) {
+        let spikeHit = false
+        for (const s of A.spikes) {
+          if (
+            A.bx > s.x - A.br * 0.7 &&
+            A.bx < s.x + s.w + A.br * 0.7 &&
+            A.by > s.y - A.br * 0.7 &&
+            A.by < s.y + s.h + A.br * 0.7
+          ) {
+            spikeHit = true
+            break
+          }
+        }
+        if (spikeHit) {
+          A.hp--
+          A.flash = this.clock
+          A.stunUntil = this.clock + 0.85
+          A.windup = -1
+          A.lungeUntil = -1
+          A.dashCombo = 0
+          A.nextDashAt = this.clock + 1.4 + Math.random() * 0.6
+          this.popup(A.bx, A.by - A.br - 12, 'EMPALÉ !', '#f87171', 1.35)
+          this.audio.impact(1)
+          this.audio.ping()
+          this.input.rumble(1, 0.6, 200)
+          this.shake = Math.min(1, this.shake + 0.8)
+          this.spawnBurst(A.bx, A.by, 0, -1, 1)
+          if (A.hp <= 0) {
+            this.winArena()
+            return
+          }
+        } else if (this.clock >= A.lungeUntil) {
           if (A.dashCombo === 0) {
             A.dashCombo = 1
             A.windupDur = 0.12 + Math.random() * 0.12
@@ -928,41 +986,6 @@ export class Game {
             A.windup = -1
             A.lungeUntil = -1
             A.nextDashAt = this.clock + 2.3 + Math.random() * 0.9
-          }
-        }
-      } else if (aiming) {
-        const ao = { x: A.bx, y: A.by, vx: 0, vy: 0 }
-        this.boundsBounce(ao, A.br, 0)
-        A.bx = ao.x
-        A.by = ao.y
-      } else {
-        const ro = { x: A.bx, y: A.by, vx: A.bvx, vy: A.bvy }
-        const bounced = this.boundsBounce(ro, A.br, 1)
-        A.bx = ro.x
-        A.by = ro.y
-        A.bvx = ro.vx
-        A.bvy = ro.vy
-        if (bounced) {
-          A.bounces++
-          if (A.bounces % 3 === 0) {
-            A.shocks.push({ t0: this.clock, done: false })
-            this.audio.tick()
-          }
-        }
-      }
-      for (let i = A.shocks.length - 1; i >= 0; i--) {
-        const s = A.shocks[i]
-        const q = (this.clock - s.t0) / 0.5
-        if (q >= 1) {
-          A.shocks.splice(i, 1)
-          continue
-        }
-        if (!s.done) {
-          const wr = A.br + q * cell * 1.5
-          const d = Math.hypot(b.x - A.bx, b.y - A.by)
-          if (Math.abs(d - wr) < b.r * 0.8) {
-            s.done = true
-            this.hitPlayer(b.x - A.bx, b.y - A.by)
           }
         }
       }
@@ -1076,7 +1099,7 @@ export class Game {
       if (dead || A.shields < 0) return
     }
 
-    const surviveT = A.kind === 'chargeur' ? 15 : 12
+    const surviveT = A.kind === 'tisseur' ? 12 : Number.POSITIVE_INFINITY
     if (A.t >= surviveT) {
       this.winArena()
       return
