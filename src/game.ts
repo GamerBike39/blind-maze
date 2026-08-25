@@ -839,6 +839,37 @@ export class Game {
     const cell = this.maze.cell
     A.t += dt
 
+    const dm = this.input.directMove()
+    if (dm) {
+      const k = Math.min(1, dt * 24)
+      b.vx = ((dm.x - b.x) * k) / dt
+      b.vy = ((dm.y - b.y) * k) / dt
+      const fd = Math.exp(-0.6 * dt)
+      b.vx *= fd
+      b.vy *= fd
+    } else {
+      const st = this.input.leftStick()
+      b.vx += st.x * 3650 * dt
+      b.vy += st.y * 3650 * dt
+      const damp = Math.exp(-3.05 * dt)
+      b.vx *= damp
+      b.vy *= damp
+    }
+    const pMax = cell * 5.5
+    let psp = Math.hypot(b.vx, b.vy)
+    if (psp > pMax) {
+      b.vx *= pMax / psp
+      b.vy *= pMax / psp
+      psp = pMax
+    }
+    const psteps = Math.min(4, Math.max(1, Math.ceil((psp * dt) / (b.r * 0.7))))
+    const psdt = dt / psteps
+    for (let i = 0; i < psteps; i++) {
+      b.x += b.vx * psdt
+      b.y += b.vy * psdt
+      this.boundsBounce(b, b.r, 0.45)
+    }
+
     if (A.kind === 'chargeur') {
       if (A.windup > 0) {
         A.bx -= A.ldx * cell * 0.5 * dt
