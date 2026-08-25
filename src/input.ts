@@ -61,6 +61,7 @@ export class Input {
   private prevKeys = new Set<string>()
   private prevButtons: boolean[] = []
   private startFlag = false
+  private startRequest = false
   private pauseFlag = false
   private flashFlag = false
   private sonarFlag = false
@@ -280,7 +281,9 @@ export class Input {
     this.prevMenuLeft = menuLeft
     this.prevMenuRight = menuRight
     this.prevKeys = new Set(this.keys)
-    this.startFlag = edge || keyEdge || this.tapFlag
+    const requestedStart = this.startRequest
+    this.startRequest = false
+    this.startFlag = edge || keyEdge || this.tapFlag || requestedStart
     this.pauseFlag = pauseEdge || pauseKeyEdge
     this.flashFlag = flashBtn || keyGEdge || this.dblFlag
     this.sonarFlag = sonarEdge
@@ -359,7 +362,7 @@ export class Input {
   }
 
   pressStart(): void {
-    this.startFlag = true
+    this.startRequest = true
   }
 
   get vibrating(): boolean {
@@ -385,6 +388,14 @@ export class Input {
     if (gp) return stick(gp.axes[0] ?? 0, gp.axes[1] ?? 0)
     if (this.keysActive()) return this.keyVec('KeyA', 'KeyD', 'KeyW', 'KeyS')
     return ZERO
+  }
+
+  horizontalAxis(): number {
+    const gp = this.pad()
+    if (gp) return stick(gp.axes[0] ?? 0, 0).x
+    const left = this.keys.has('KeyA') || this.keys.has('ArrowLeft')
+    const right = this.keys.has('KeyD') || this.keys.has('ArrowRight')
+    return Number(right) - Number(left)
   }
 
   rightStick(): Stick {

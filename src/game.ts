@@ -9,10 +9,13 @@ import {
 } from './maze'
 import type { Input } from './input'
 import type { SoundEngine } from './audio'
+import { createSillage, stepSillage, type SillageState } from './sillage'
 
 export const BOARD = 960
 const MARGIN = 34
 const REVEAL_LIFE_BASE = 3.6
+const SILLAGE_PROGRESS_SPEED = 4
+const SILLAGE_BASE_FORWARD_SPEED = 155
 
 export type Phase = 'ready' | 'preview' | 'playing' | 'transition' | 'recap' | 'paused'
 
@@ -196,8 +199,10 @@ export interface Hazard {
   h: number
 }
 
+export type PortalKind = 'chargeur' | 'tisseur' | 'sillage'
+
 export interface Arena {
-  kind: 'chargeur' | 'tisseur'
+  kind: PortalKind
   hp: number
   shields: number
   invulnT: number
@@ -227,6 +232,7 @@ export interface Arena {
   Ay: number
   Aw: number
   Ah: number
+  sillage?: SillageState
 }
 
 export function fmtTime(t: number): string {
@@ -261,7 +267,7 @@ export class Game {
   zones: Zone[] = []
   portalCell: [number, number] | null = null
   portalConsumed = false
-  portalKind: 'chargeur' | 'tisseur' = 'chargeur'
+  portalKind: PortalKind = 'chargeur'
   portalCooldownUntil = -1
   arena: Arena | null = null
 
@@ -322,6 +328,7 @@ export class Game {
   private drainDur = 1.5
   private speedNorm = 0
   private exitGlow = 0
+  private sillageRumbleAt = -1
 
   get motion(): number {
     return this.speedNorm
@@ -470,7 +477,8 @@ export class Game {
       )
       if (inZone) continue
       this.portalCell = [cx, cy]
-      this.portalKind = rnd() < 0.5 ? 'chargeur' : 'tisseur'
+      const kindRoll = rnd()
+      this.portalKind = kindRoll < 0.34 ? 'chargeur' : kindRoll < 0.67 ? 'tisseur' : 'sillage'
       return
     }
   }
@@ -753,8 +761,9 @@ export class Game {
 
   private enterArena(): void {
     const cell = this.maze.cell
-    const Aw = cell * 7
-    const Ah = cell * 4.2
+    const sillageArena = this.portalKind === 'sillage'
+    const Aw = sillageArena ? BOARD - 2 * 74 : cell * 7
+    const Ah = sillageArena ? BOARD - 2 * 62 : cell * 4.2
     const Ax = (BOARD - Aw) / 2
     const Ay = (BOARD - Ah) / 2
     const kind = this.portalKind
@@ -777,6 +786,23 @@ export class Game {
         }
       }
     }
+    const sillage = sillageArena
+      ? createSillage({
+          seed: this.mode.daily
+            ? hashSeed(`${this.todayKey()}|sillage|${this.level}`)
+            : Math.floor(Math.random() * 0xffffffff),
+          difficulty: Math.min(0.85, 0.26 + this.level * 0.14),
+          duration: 30 + this.level * 4,
+          radius: Math.max(12, cell * 0.18),
+          forwardSpeed: SILLAGE_BASE_FORWARD_SPEED * SILLAGE_PROGRESS_SPEED,
+          bounds: {
+            left: Ax + 42,
+            right: Ax + Aw - 42,
+            top: Ay + 34,
+            bottom: Ay + Ah - 34,
+          },
+        })
+      : undefined
     this.arena = {
       kind,
       hp: kind === 'chargeur' ? 3 : 99,
@@ -798,16 +824,17 @@ export class Game {
       shocks: [],
       spikes,
       stunUntil: -1,
-      bx: BOARD / 2,
-      by: Ay + cell * 0.9,
+      bx: sillage?.playerX ?? BOARD / 2,
+      by: sillage?.playerY ?? Ay + cell * 0.9,
       bvx: cell * 3.4,
       bvy: cell * 2.9,
-      br: cell * (kind === 'chargeur' ? 0.42 : 0.36),
+      br: sillage?.radius ?? cell * (kind === 'chargeur' ? 0.42 : 0.36),
       flash: -1,
       Ax,
       Ay,
       Aw,
       Ah,
+      sillage,
     }
     if (kind === 'chargeur') {
       const Aa = this.arena!
@@ -833,8 +860,15 @@ export class Game {
         }
       }
     }
-    this.ball.x = BOARD / 2
-    this.ball.y = Ay + Ah - this.ball.r - 10
+    if (sillage) {
+      this.ball.r = sillage.radius
+      this.ball.x = sillage.playerX
+      this.ball.y = sillage.playerY
+      this.sillageRumbleAt = -1
+    } else {
+      this.ball.x = BOARD / 2
+      this.ball.y = Ay + Ah - this.ball.r - 10
+    }
     this.ball.vx = 0
     this.ball.vy = 0
     this.trailEpoch++
@@ -843,8 +877,11 @@ export class Game {
     const label =
       kind === 'chargeur'
         ? 'LE CHARGEUR S\u2019ÉVEILLE'
-        : 'LE TISSEUR — SURVIS 12s'
-    this.popup(BOARD / 2, Ay - 26, label, '#fb923c', 1.3)
+        : kind === 'tisseur'
+          ? 'LE TISSEUR — SURVIS 12s'
+          : 'LE SILLAGE — TIENS LA FAILLE'
+    const labelColor = kind === 'chargeur' ? '#fb923c' : kind === 'tisseur' ? '#e879f9' : '#67e8f9'
+    this.popup(BOARD / 2, Ay - 26, label, labelColor, 1.3)
     this.audio.ping()
     this.input.rumble(0.6, 0.2, 160)
     this.shake = Math.min(1, this.shake + 0.35)
@@ -873,7 +910,8 @@ export class Game {
 
   private failArena(): void {
     const A = this.arena!
-    this.popup(BOARD / 2, A.Ay + A.Ah / 2, 'ÉCHEC DU GARDIEN', '#fda4af', 1.4)
+    const label = A.kind === 'sillage' ? 'SILLAGE BRISÉ' : 'ÉCHEC DU GARDIEN'
+    this.popup(BOARD / 2, A.Ay + A.Ah / 2, label, '#fda4af', 1.4)
     this.portalCooldownUntil = this.clock + 2.5
     this.exitArena()
     this.startResume()
@@ -891,6 +929,11 @@ export class Game {
     const b = this.ball
     const cell = this.maze.cell
     A.t += dt
+
+    if (A.kind === 'sillage') {
+      this.sillageStep(dt)
+      return
+    }
 
     const dm = this.input.directMove()
     if (dm) {
@@ -1175,6 +1218,73 @@ export class Game {
     this.speedNorm = Math.min(1, Math.hypot(b.vx, b.vy) / (cell * 5.2))
   }
 
+  private sillageStep(dt: number): void {
+    const A = this.arena!
+    const S = A.sillage
+    if (!S) return
+    const dm = this.input.directMove()
+    const result = stepSillage(S, dt, this.input.horizontalAxis(), dm ? dm.x : null)
+    const b = this.ball
+    b.x = S.playerX
+    b.y = S.playerY
+    b.vx = S.playerVx
+    b.vy = 0
+    A.bx = b.x
+    A.by = b.y
+    A.br = S.radius
+    this.speedNorm = Math.min(1, 0.25 + Math.abs(S.playerVx) / 600)
+
+    const pressure = Math.min(1, S.near)
+    const hapticGap = 0.08 + (1 - pressure) * 0.12
+    if (pressure > 0.02 && this.clock - this.sillageRumbleAt >= hapticGap) {
+      this.input.rumble(
+        0.08 + pressure * 0.82,
+        0.14 + pressure * 0.72,
+        58 + pressure * 62,
+      )
+      this.sillageRumbleAt = this.clock
+    }
+
+    if (result.contactStarted) this.audio.tick()
+    if (result.scrape) {
+      this.audio.impact(0.18 + pressure * 0.62)
+      this.shake = Math.min(1, this.shake + 0.08 + pressure * 0.13)
+      this.squash.ang = S.wallSide < 0 ? Math.PI : 0
+      this.squash.v = Math.min(this.squash.v, -(0.45 + pressure * 0.7))
+      this.spawnSillageSparks(S)
+    }
+
+    if (result.failed) {
+      this.failArena()
+      return
+    }
+    if (result.completed) {
+      this.winArena()
+    }
+  }
+
+  private spawnSillageSparks(s: SillageState): void {
+    if (s.wallSide === 0) return
+    const outward = s.wallSide < 0 ? -1 : 1
+    const x = s.wallSide < 0 ? s.leftWall : s.rightWall
+    const count = 4 + Math.round(s.near * 5)
+    for (let i = 0; i < count; i++) {
+      const angle = (outward < 0 ? Math.PI : 0) + (Math.random() * 2 - 1) * 0.9
+      const speed = this.maze.cell * (0.9 + Math.random() * 2.2)
+      this.particles.push({
+        x,
+        y: s.playerY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        t: 0,
+        life: 0.22 + Math.random() * 0.2,
+        color: Math.random() < 0.35 ? '#ffffff' : '#67e8f9',
+        size: this.maze.th * (0.28 + Math.random() * 0.35),
+      })
+    }
+    if (this.particles.length > 160) this.particles.splice(0, this.particles.length - 160)
+  }
+
   private boundsBounce(
     o: { x: number; y: number; vx: number; vy: number },
     r: number,
@@ -1207,22 +1317,49 @@ export class Game {
 
   private winArena(): void {
     const A = this.arena!
+    const S = A.kind === 'sillage' ? A.sillage : undefined
     for (let id = 0; id < this.maze.walls.length; id++) {
       if (Math.random() < 0.3) this.softReveal(id, 0.85, 'probe')
     }
     this.grenades = Math.min(9, this.mode.grenadesPerLevel)
-    const pts = Math.round(250 * this.mode.mult)
+    const centerRatio = S ? Math.min(1, S.centerScore / Math.max(1, S.duration)) : 0
+    const basePts = S
+      ? 170 + S.stability * 2.4 + centerRatio * 120 + (S.clean ? 170 : 0)
+      : 250
+    const pts = Math.round(basePts * this.mode.mult)
     this.levelPoints += pts
     this.chain += COMBO_STEP * 2
     this.mult = Math.min(MULT_MAX, 1 + Math.floor(this.chain / COMBO_STEP))
-    this.popup(BOARD / 2, A.Ay + A.Ah / 2, `GARDIEN VAINCU · +${pts} PTS`, '#fcd34d', 1.5)
     this.popup(
       BOARD / 2,
-      A.Ay + A.Ah / 2 + 30,
+      A.Ay + A.Ah / 2,
+      `${S ? 'SILLAGE TRAVERSÉ' : 'GARDIEN VAINCU'} · +${pts} PTS`,
+      '#fcd34d',
+      1.5,
+    )
+    if (S) {
+      this.popup(
+        BOARD / 2,
+        A.Ay + A.Ah / 2 + 30,
+        `STABILITÉ ${Math.round(S.stability)}%${S.clean ? ' · TRAJECTOIRE PARFAITE' : ''}`,
+        '#67e8f9',
+        0.95,
+      )
+      this.popup(
+        BOARD / 2,
+        A.Ay + A.Ah / 2 + 48,
+        `AXE ${Math.round(centerRatio * 100)}%`,
+        '#a5f3fc',
+        0.82,
+      )
+    }
+    this.popup(
+      BOARD / 2,
+      A.Ay + A.Ah / 2 + (S ? 78 : 30),
       `⚡ RECHARGÉS (${this.grenades})`,
       '#67e8f9',
     )
-    this.audio.win(2)
+    this.audio.win(S ? (S.clean ? 4 : S.stability > 50 ? 3 : 2) : 2)
     this.input.rumble(1, 0.8, 260)
     this.shake = 1
     this.spawnBurst(A.bx, A.by, 0, -1, 1)
@@ -1236,6 +1373,7 @@ export class Game {
     this.ball.y = this.savedPos.y
     this.ball.vx = 0
     this.ball.vy = 0
+    this.ball.r = Math.max(6, this.maze.cell * 0.23)
     this.trailX = this.ball.x
     this.trailY = this.ball.y
     this.arena = null
@@ -1424,7 +1562,7 @@ export class Game {
   }
 
   devCycleBoss(): void {
-    const order: ('chargeur' | 'tisseur')[] = ['chargeur', 'tisseur']
+    const order: PortalKind[] = ['chargeur', 'tisseur', 'sillage']
     const idx = order.indexOf(this.portalKind)
     this.portalKind = order[(idx + 1) % order.length]
     this.portalConsumed = false

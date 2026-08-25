@@ -4,6 +4,7 @@ import { BOARD, Game, MODES, RUN_LENGTH, fmtTime, type Phase } from './game'
 import { Renderer } from './renderer'
 import { SoundEngine } from './audio'
 import { Background } from './bg'
+import { FxLayer, ROSE } from './fx'
 
 const canvas = document.getElementById('game') as HTMLCanvasElement
 const hudLevel = document.getElementById('hud-level')!
@@ -54,8 +55,9 @@ interface Settings {
   vol: number
   vib: boolean
   trail: number
+  neon: boolean
 }
-const DEFAULTS: Settings = { vol: 85, vib: true, trail: 1 }
+const DEFAULTS: Settings = { vol: 85, vib: true, trail: 1, neon: true }
 function loadSettings(): Settings {
   try {
     const s = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? '{}') as Partial<Settings>
@@ -103,6 +105,10 @@ function settingsHTML(s: Settings): string {
         <option value="1" ${s.trail === 1 ? 'selected' : ''}>Normale</option>
         <option value="1.7" ${s.trail === 1.7 ? 'selected' : ''}>Longue</option>
       </select>
+    </label>
+    <label class="row">
+      <input type="checkbox" id="set-neon" ${s.neon ? 'checked' : ''} />
+      <span>Effets néon (WebGL)</span>
     </label>
     <button id="set-wipe">Effacer records &amp; tops</button>`
 }
@@ -152,21 +158,25 @@ function openModal(kind: 'settings' | 'controls'): void {
     const vol = modalContent.querySelector<HTMLInputElement>('#set-vol')!
     const vib = modalContent.querySelector<HTMLInputElement>('#set-vib')!
     const trail = modalContent.querySelector<HTMLSelectElement>('#set-trail')!
+    const neon = modalContent.querySelector<HTMLInputElement>('#set-neon')!
     const wipe = modalContent.querySelector<HTMLButtonElement>('#set-wipe')!
     const apply = (): void => {
       const s: Settings = {
         vol: Number(vol.value),
         vib: vib.checked,
         trail: Number(trail.value),
+        neon: neon.checked,
       }
       audio.setVolume(s.vol / 100)
       input.vibrationEnabled = s.vib
       game.trailUserMul = s.trail
+      fx?.setEnabled(s.neon)
       saveSettings(s)
     }
     vol.addEventListener('input', apply)
     vib.addEventListener('change', apply)
     trail.addEventListener('change', apply)
+    neon.addEventListener('change', apply)
     wipe.addEventListener('click', () => {
       try {
         Object.keys(localStorage)
@@ -479,12 +489,14 @@ const audio = new SoundEngine()
 const game = new Game(input, audio)
 const renderer = new Renderer(canvas)
 const bg = new Background(document.getElementById('bg') as HTMLCanvasElement)
+const fx = FxLayer.create(document.getElementById('stage')!, canvas)
 
 {
   const s = loadSettings()
   audio.setVolume(s.vol / 100)
   input.vibrationEnabled = s.vib
   game.trailUserMul = s.trail
+  fx?.setEnabled(s.neon)
 }
 
 let stageRect = document.getElementById('stage')!.getBoundingClientRect()
@@ -561,16 +573,37 @@ let last = performance.now()
 let shownScore = 0
 let prevMult = 1
 let fpsEma = 60
+let prevShake = 0
+let hitstopT = 0
+let wasInArena = false
 
 function frame(now: number): void {
   const rawDt = Math.min(0.033, Math.max(0, (now - last) / 1000))
   last = now
   fpsEma += (1 / Math.max(1e-3, rawDt) - fpsEma) * 0.05
-  const dt = rawDt * game.timeScale
+
+  const shakeDelta = game.shake - prevShake
+  prevShake = game.shake
+  const live = game.phase === 'playing' || game.phase === 'preview'
+  if (shakeDelta > 0.14 && live && !game.inArena && !wasInArena && game.phase !== 'transition') {
+    const s = Math.min(1.4, shakeDelta * 1.05)
+    fx?.shock(game.ball.x / BOARD, game.ball.y / BOARD, 0.45 + s * 0.85, ROSE)
+    fx?.punch(game.ball.x / BOARD, game.ball.y / BOARD, 0.01 + 0.02 * s)
+    if (game.phase === 'playing' && s > 0.45) hitstopT = 0.055 + 0.05 * Math.min(1, s)
+  }
+  wasInArena = game.inArena
+
+  let dt = rawDt * game.timeScale
+  if (hitstopT > 0) {
+    hitstopT -= rawDt
+    dt *= 0.12
+  }
 
   input.poll()
   game.update(dt)
   renderer.draw(game, dt)
+  fx?.update(game)
+  fx?.render(rawDt)
   const scale = stageRect.width / BOARD
   const bx = stageRect.left + game.ball.x * scale
   const by = stageRect.top + game.ball.y * scale
@@ -583,7 +616,8 @@ function frame(now: number): void {
 
   hudTime.textContent = fmtTime(game.totalTime)
   const mt = game.modifierTag()
-  const tags = [mt, game.inArena ? 'GARDIEN' : ''].filter(Boolean).join(' · ')
+  const arenaTag = game.arena?.kind === 'sillage' ? 'SILLAGE' : game.inArena ? 'GARDIEN' : ''
+  const tags = [mt, arenaTag].filter(Boolean).join(' · ')
   hudLevel.textContent =
     `NIVEAU ${game.level + 1}/${RUN_LENGTH} · ${game.gridSize}×${game.gridSize}` +
     (tags ? ` · ⟬${tags}⟭` : '')

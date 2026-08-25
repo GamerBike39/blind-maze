@@ -1,4 +1,5 @@
 import { BOARD, type Arena, type Game } from './game'
+import { sampleSillageAt, type SillageState } from './sillage'
 
 export class Renderer {
   private ctx: CanvasRenderingContext2D
@@ -206,18 +207,25 @@ export class Renderer {
     const m = g.maze
     const x = m.ox + (g.portalCell[0] + 0.5) * m.cell
     const y = m.oy + (g.portalCell[1] + 0.5) * m.cell
+    const accent =
+      g.portalKind === 'chargeur'
+        ? '#fb923c'
+        : g.portalKind === 'tisseur'
+          ? '#e879f9'
+          : '#67e8f9'
     const p = 0.5 + 0.5 * Math.sin(g.clock * 2.6)
     const s = m.cell * 0.18
     const ctx = this.ctx
     ctx.save()
     ctx.translate(x, y)
     ctx.rotate(Math.PI / 4 + g.clock * 1.4)
-    ctx.shadowColor = '#fb923c'
+    ctx.shadowColor = accent
     ctx.shadowBlur = 14 + 10 * p
-    ctx.strokeStyle = `rgba(251,146,60,${(0.5 + 0.45 * p).toFixed(3)})`
+    ctx.strokeStyle = accent
+    ctx.globalAlpha = 0.5 + 0.45 * p
     ctx.lineWidth = 2.5
     ctx.strokeRect(-s, -s, s * 2, s * 2)
-    ctx.fillStyle = `rgba(253,186,116,${(0.5 + 0.4 * p).toFixed(3)})`
+    ctx.fillStyle = accent
     ctx.beginPath()
     ctx.arc(0, 0, m.cell * 0.07, 0, Math.PI * 2)
     ctx.fill()
@@ -225,6 +233,10 @@ export class Renderer {
   }
 
   private arenaScene(g: Game, A: Arena): void {
+    if (A.kind === 'sillage' && A.sillage) {
+      this.sillageScene(g, A.sillage)
+      return
+    }
     const ctx = this.ctx
     const chargeur = A.kind === 'chargeur'
     const accent = chargeur ? '#fb923c' : '#e879f9'
@@ -450,6 +462,201 @@ export class Renderer {
         }
       }
     }
+  }
+
+  private sillageScene(g: Game, s: SillageState): void {
+    const ctx = this.ctx
+    const { left, right, top, bottom } = s.bounds
+    const frameX = left - 34
+    const frameY = top - 34
+    const frameW = right - left + 68
+    const frameH = bottom - top + 68
+    const sampleCount = 52
+    const leftPts: [number, number][] = []
+    const rightPts: [number, number][] = []
+    const centerPts: [number, number][] = []
+
+    ctx.fillStyle = 'rgba(1,4,14,0.78)'
+    ctx.fillRect(0, 0, BOARD, BOARD)
+    const panel = ctx.createLinearGradient(0, frameY, 0, frameY + frameH)
+    panel.addColorStop(0, 'rgba(8,22,40,0.82)')
+    panel.addColorStop(0.5, 'rgba(3,10,25,0.92)')
+    panel.addColorStop(1, 'rgba(4,8,20,0.86)')
+    ctx.fillStyle = panel
+    ctx.beginPath()
+    ctx.roundRect(frameX, frameY, frameW, frameH, 16)
+    ctx.fill()
+    ctx.save()
+    ctx.shadowColor = '#22d3ee'
+    ctx.shadowBlur = 24
+    ctx.strokeStyle = 'rgba(103,232,249,0.7)'
+    ctx.lineWidth = 3
+    ctx.beginPath()
+    ctx.roundRect(frameX, frameY, frameW, frameH, 16)
+    ctx.stroke()
+    ctx.restore()
+
+    for (let i = 0; i <= sampleCount; i++) {
+      const y = top + ((bottom - top) * i) / sampleCount
+      const distanceAtY =
+        s.distance + ((s.playerY - y) / Math.max(1, bottom - top)) * s.viewDistance
+      const sample = sampleSillageAt(s, distanceAtY / s.totalDistance)
+      leftPts.push([sample.leftWall, y])
+      rightPts.push([sample.rightWall, y])
+      centerPts.push([sample.centerX, y])
+    }
+
+    ctx.fillStyle = 'rgba(2,6,17,0.94)'
+    ctx.beginPath()
+    ctx.moveTo(frameX, top)
+    for (const [x, y] of leftPts) ctx.lineTo(x, y)
+    ctx.lineTo(frameX, bottom)
+    ctx.closePath()
+    ctx.fill()
+    ctx.beginPath()
+    ctx.moveTo(right, top)
+    ctx.lineTo(frameX + frameW, top)
+    ctx.lineTo(frameX + frameW, bottom)
+    for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i][0], rightPts[i][1])
+    ctx.closePath()
+    ctx.fill()
+
+    const corridor = ctx.createLinearGradient(0, top, 0, bottom)
+    corridor.addColorStop(0, 'rgba(21,65,91,0.22)')
+    corridor.addColorStop(0.45, 'rgba(8,35,61,0.38)')
+    corridor.addColorStop(1, 'rgba(6,21,43,0.18)')
+    ctx.fillStyle = corridor
+    ctx.beginPath()
+    ctx.moveTo(leftPts[0][0], leftPts[0][1])
+    for (const [x, y] of leftPts) ctx.lineTo(x, y)
+    for (let i = rightPts.length - 1; i >= 0; i--) ctx.lineTo(rightPts[i][0], rightPts[i][1])
+    ctx.closePath()
+    ctx.fill()
+
+    ctx.save()
+    ctx.globalAlpha = 0.18
+    ctx.strokeStyle = '#67e8f9'
+    ctx.lineWidth = 1
+    for (let i = 1; i < 14; i++) {
+      const y = top + ((bottom - top) * i) / 14
+      ctx.beginPath()
+      ctx.moveTo(frameX + 8, y)
+      ctx.lineTo(frameX + frameW - 8, y)
+      ctx.stroke()
+    }
+    ctx.restore()
+
+    const danger = s.touching || s.near > 0.65
+    const wallColor = danger ? '#fb7185' : '#67e8f9'
+    ctx.save()
+    ctx.globalCompositeOperation = 'lighter'
+    ctx.shadowColor = wallColor
+    ctx.shadowBlur = danger ? 25 : 17
+    ctx.strokeStyle = wallColor
+    ctx.lineWidth = danger ? 4 : 3
+    for (const points of [leftPts, rightPts]) {
+      ctx.beginPath()
+      ctx.moveTo(points[0][0], points[0][1])
+      for (const [x, y] of points) ctx.lineTo(x, y)
+      ctx.stroke()
+    }
+    ctx.setLineDash([5, 18])
+    ctx.lineDashOffset = -g.clock * 48
+    ctx.globalAlpha = 0.58
+    ctx.lineWidth = 1.5
+    for (const points of [leftPts, rightPts]) {
+      ctx.beginPath()
+      ctx.moveTo(points[0][0], points[0][1])
+      for (const [x, y] of points) ctx.lineTo(x, y)
+      ctx.stroke()
+    }
+    ctx.restore()
+
+    ctx.save()
+    ctx.globalAlpha = 0.38
+    ctx.setLineDash([3, 19])
+    ctx.lineDashOffset = -g.clock * 36
+    ctx.strokeStyle = '#a5f3fc'
+    ctx.lineWidth = 1.5
+    ctx.beginPath()
+    ctx.moveTo(centerPts[0][0], centerPts[0][1])
+    for (const [x, y] of centerPts) ctx.lineTo(x, y)
+    ctx.stroke()
+    ctx.restore()
+
+    if (s.trail.length > 1) {
+      ctx.save()
+      ctx.lineCap = 'round'
+      ctx.lineJoin = 'round'
+      const screenPerWorld = (bottom - top) / Math.max(1, s.viewDistance)
+      const trailSpeed = s.forwardSpeed * screenPerWorld
+      for (let i = 1; i < s.trail.length; i++) {
+        const a = s.trail[i - 1]
+        const b = s.trail[i]
+        const ageA = s.elapsed - a.t
+        const ageB = s.elapsed - b.t
+        const yA = s.playerY + ageA * trailSpeed
+        const yB = s.playerY + ageB * trailSpeed
+        if (yA > bottom + 18 && yB > bottom + 18) continue
+        const alpha = Math.max(0.03, 0.42 * (1 - ageB / 4.2))
+        ctx.globalAlpha = alpha
+        ctx.strokeStyle = '#67e8f9'
+        ctx.shadowColor = '#22d3ee'
+        ctx.shadowBlur = 12
+        ctx.lineWidth = 2.5 + alpha * 4
+        ctx.beginPath()
+        ctx.moveTo(a.x, yA)
+        ctx.lineTo(b.x, yB)
+        ctx.stroke()
+      }
+      ctx.restore()
+    }
+
+    if (s.near > 0) {
+      const pulse = 0.5 + 0.5 * Math.sin(g.clock * 12)
+      ctx.save()
+      ctx.globalCompositeOperation = 'lighter'
+      ctx.strokeStyle = `rgba(251,113,133,${(s.near * (0.35 + pulse * 0.35)).toFixed(3)})`
+      ctx.lineWidth = 2 + s.near * 2
+      ctx.beginPath()
+      ctx.moveTo(s.leftWall - 12, s.playerY - 22)
+      ctx.lineTo(s.leftWall - 12, s.playerY + 22)
+      ctx.moveTo(s.rightWall + 12, s.playerY - 22)
+      ctx.lineTo(s.rightWall + 12, s.playerY + 22)
+      ctx.stroke()
+      ctx.restore()
+    }
+
+    const barX = frameX + 22
+    const barW = frameW - 44
+    const stabilityRatio = s.stability / s.stabilityMax
+    const stabilityColor = stabilityRatio < 0.35 ? '#fb7185' : '#67e8f9'
+    ctx.save()
+    ctx.font = '600 13px "Segoe UI", system-ui, sans-serif'
+    ctx.textBaseline = 'middle'
+    ctx.fillStyle = '#67e8f9'
+    ctx.textAlign = 'left'
+    ctx.fillText('LE SILLAGE', barX, frameY + 23)
+    ctx.textAlign = 'right'
+    ctx.fillText(`SORTIE ${Math.round(s.progress * 100)}%`, frameX + frameW - 22, frameY + 23)
+    ctx.fillStyle = 'rgba(103,232,249,0.12)'
+    ctx.fillRect(barX, frameY + 36, barW, 6)
+    ctx.fillStyle = '#67e8f9'
+    ctx.fillRect(barX, frameY + 36, barW * s.progress, 6)
+    ctx.fillStyle = 'rgba(148,163,184,0.14)'
+    ctx.fillRect(barX, frameY + frameH - 42, barW, 7)
+    ctx.fillStyle = stabilityColor
+    ctx.shadowColor = stabilityColor
+    ctx.shadowBlur = 12
+    ctx.fillRect(barX, frameY + frameH - 42, barW * stabilityRatio, 7)
+    ctx.shadowBlur = 0
+    ctx.fillStyle = stabilityColor
+    ctx.textAlign = 'left'
+    ctx.fillText(`STABILITÉ ${Math.round(s.stability)}%`, barX, frameY + frameH - 23)
+    ctx.textAlign = 'center'
+    ctx.fillStyle = 'rgba(165,243,252,0.68)'
+    ctx.fillText('← → / A D  ·  RESTE DANS LA FAILLE', frameX + frameW / 2, frameY + frameH - 23)
+    ctx.restore()
   }
 
   private particles(g: Game): void {
@@ -726,12 +933,13 @@ export class Renderer {
     const b = g.ball
     const q = g.squash
     const invuln = g.arena !== null && g.clock < g.arena.invulnT
+    const sillage = g.arena?.kind === 'sillage' ? g.arena.sillage : undefined
     const sp = Math.hypot(b.vx, b.vy)
     const stretch = Math.min(1, sp / (g.maze.cell * 5.2)) * 0.1
     const va = Math.atan2(b.vy, b.vx)
     ctx.save()
     if (invuln) ctx.globalAlpha = 0.45 + 0.35 * Math.sin(g.clock * 30)
-    ctx.shadowColor = '#22d3ee'
+    ctx.shadowColor = sillage?.touching ? '#fb7185' : '#22d3ee'
     ctx.shadowBlur = 22
     ctx.translate(b.x, b.y)
     ctx.rotate(q.ang)
@@ -750,6 +958,13 @@ export class Renderer {
     ctx.beginPath()
     ctx.arc(0, 0, b.r, 0, Math.PI * 2)
     ctx.fill()
+    if (sillage?.touching) {
+      ctx.strokeStyle = 'rgba(251,113,133,0.85)'
+      ctx.lineWidth = 2
+      ctx.beginPath()
+      ctx.arc(0, 0, b.r * 1.35, 0, Math.PI * 2)
+      ctx.stroke()
+    }
     ctx.restore()
   }
 }
